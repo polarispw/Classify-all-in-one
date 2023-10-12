@@ -8,7 +8,7 @@
 - support functions like full parameter training, fine-tuning, p-tuning
 - customize the structure of model, invisible to higher levels like data processor or trainer
 - customize metrics like contrastive learning
-- customize lr scheduler, optimizer, 
+- customize lr scheduler, optimizer,
 - convenient data loader for text in json files
 - easily run with config.json and CLI
 - auto archive of logs, results and checkpoints, support tensorboard
@@ -20,12 +20,12 @@ Project/
 |---archive/	# dir of logs, checkpoints and results
 |---configs/
 	|---config.json	# default hyper-parameters
-    |---args.py	# arg_parser class
-|---data_lib/	# dir of datasets
+    |---args_list.py	# arg_parser class
 |---data/
 	|---preprocess.py	# any2json, profile the datasets: seq_len, labels 
     |---augmentation.py	# data augmentaion
 	|---dataset.py
+|---data_lib/	# dir of datasets
 |---models/
 	|---base_model.py	# abstract for calling 
     |---modeling_[model_name].py	# implement and customization of models
@@ -43,6 +43,7 @@ Project/
 |---utils/
 	|---chatgpt_api.py	# access to chatgpt
     |---save.py	# create dir for every exp; save logs in CLI, checkpoints and tensorboard files
+    |---environment.py	# generate requirements.txt, collate folders in the project
     |---...
 |---scripts/
 	|---train.sh	# receive hyper-parameters and call run.py for training
