@@ -5,16 +5,14 @@ openai.api_key = "sk-vsdk6LKfeVQm1H6DKRf4fpWZ6tMWnRVSWlZ1yGoXGzOnioSq"
 openai.api_base = "https://api.chatanywhere.cn/v1"
 
 
-# 非流式响应
-# completion = openai.ChatCompletion.create(models="gpt-3.5-turbo", messages=[{"role": "user", "content": "Hello world!"}])
-# print(completion.choices[0].message.content)
+# 非流式响应 completion = openai.ChatCompletion.create(models="gpt-3.5-turbo", messages=[{"role": "user", "content":
+# "Hello world!"}]) print(completion.choices[0].message.content)
 
 def gpt_35_api_stream(messages: list):
     """为提供的对话消息创建新的回答 (流式传输)
 
     Args:
         messages (list): 完整的对话消息
-        api_key (str): OpenAI API 密钥
 
     Returns:
         tuple: (results, error_desc)
@@ -40,6 +38,6 @@ def gpt_35_api_stream(messages: list):
 
 
 if __name__ == '__main__':
-    messages = [{'role': 'user', 'content': '鲁迅和周树人的关系'}, ]
-    print(gpt_35_api_stream(messages))
-    print(messages)
+    message = [{'role': 'user', 'content': '鲁迅和周树人的关系'}, ]
+    print(gpt_35_api_stream(message))
+    print(message)

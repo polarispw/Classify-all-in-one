@@ -43,7 +43,6 @@ Project/
 |---utils/
 	|---chatgpt_api.py	# access to chatgpt
     |---save.py	# create dir for every exp; save logs in CLI, checkpoints and tensorboard files
-    |---environment.py	# generate requirements.txt, collate folders in the project
     |---...
 |---scripts/
 	|---train.sh	# receive hyper-parameters and call run.py for training
@@ -51,4 +50,3 @@ Project/
 run.py
 requirements.txt
 ```
-
