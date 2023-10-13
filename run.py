@@ -15,7 +15,7 @@ from models.base_model import MODEL_TYPES, resize_token_type_embeddings, convert
 from train.trainer import Trainer
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
 from transformers import HfArgumentParser, set_seed
-from utils.processors import num_labels_mapping, output_modes_mapping, compute_metrics_mapping, bound_mapping
+from data.processors import num_labels_mapping, output_modes_mapping, compute_metrics_mapping, bound_mapping
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

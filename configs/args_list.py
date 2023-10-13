@@ -26,7 +26,7 @@ class ModelArguments:
     # Few-shot type
     #   - finetune: standard fine-tuning
     #   - prompt: prompt-based fine-tuning
-    #   - prompt-demo: prompt-based fine-tuning with demonstrations
+    #   - prompt-demo: prompt-based fine-tuning with demonstrations, in-context learning
     few_shot_type: str = field(
         default='finetune',
         metadata={"help": "Few-shot learning model type. Choice: finetune, prompt, prompt-demo"}
