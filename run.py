@@ -7,7 +7,7 @@ from typing import Callable, Dict
 import numpy as np
 import torch
 import torch.nn.functional as F
-from data.dataset import FewShotDataset
+from data.dataset import MyDataset, MyDataCollatorWithPadding
 from filelock import FileLock
 from configs.args_list import ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments
 from models.modeling_roberta import RobertaConfig
@@ -322,17 +322,17 @@ def main():
 
     # Get our special datasets.
     train_dataset = (
-        FewShotDataset(data_args, tokenizer=tokenizer, mode="train", use_demo=("demo" in model_args.few_shot_type))
+        MyDataset(data_args, tokenizer=tokenizer, mode="train", use_demo=("demo" in model_args.few_shot_type))
         if training_args.do_train
         else None
     )
     eval_dataset = (
-        FewShotDataset(data_args, tokenizer=tokenizer, mode="dev", use_demo=("demo" in model_args.few_shot_type))
+        MyDataset(data_args, tokenizer=tokenizer, mode="dev", use_demo=("demo" in model_args.few_shot_type))
         if training_args.do_eval
         else None
     )
     test_dataset = (
-        FewShotDataset(data_args, tokenizer=tokenizer, mode="test", use_demo=("demo" in model_args.few_shot_type))
+        MyDataset(data_args, tokenizer=tokenizer, mode="test", use_demo=("demo" in model_args.few_shot_type))
         if training_args.do_predict
         else None
     )
@@ -496,12 +496,6 @@ def main():
     if training_args.do_predict:
         logging.info("*** Test ***")
         test_datasets = [test_dataset]
-        ### Don't evaluate on mnli-mm for our purposes
-        # if data_args.task_name == "mnli":
-        #     mnli_mm_data_args = dataclasses.replace(data_args, task_name="mnli-mm")
-        #     test_datasets.append(
-        #         FewShotDataset(mnli_mm_data_args, tokenizer=tokenizer, mode="test", use_demo=('demo' in model_args.few_shot_type))
-        #     )
 
         for test_dataset in test_datasets:
             trainer.compute_metrics = build_compute_metrics_fn(test_dataset.args.task_name)

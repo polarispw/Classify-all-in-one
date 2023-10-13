@@ -45,7 +45,7 @@ class ModelArguments:
     # LoRA arguments: only for BERT-type model
     apply_lora: bool = field(
         default=False,
-        metadata={'help': 'use LoRA for finetuning'}
+        metadata={'help': 'use LoRA for fine tuning'}
     )
     lora_alpha: int = field(
         default=None,
@@ -227,7 +227,7 @@ class DynamicTrainingArguments(TrainingArguments):
     # For ensemble
     array_id: int = field(
         default=-1,
-        metadata={"help": "Array ID (contains seed and hyper-parameter search) to idenfity the model"}
+        metadata={"help": "Array ID (contains seed and hyper-parameter search) to identify the model"}
     )
 
     model_id: int = field(
@@ -335,4 +335,10 @@ class DynamicTrainingArguments(TrainingArguments):
     optimize_acc: bool = field(
         default=False,
         metadata={"help": "Maximize accuracy instead of minimizing loss"}
+    )
+
+    hf_inference_model: bool = field(
+        default=False,
+        metadata={
+            "help": "loads the HF model in inference mode across many GPUs. incompatible with --zero_order_use_trainer_optim."}
     )

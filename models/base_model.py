@@ -6,9 +6,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.models.bert.modeling_bert import BertPreTrainedModel, BertModel, BertOnlyMLMHead
 # from transformers.models.roberta.modeling_roberta import  RobertaPreTrainedModel, RobertaModel, RobertaLMHead
-from .modeling_roberta import RobertaPreTrainedModel, RobertaModel, RobertaLMHead
+from modeling_roberta import RobertaPreTrainedModel, RobertaModel, RobertaLMHead
 # from transformers.models.opt.modeling_opt import OPTPreTrainedModel, OPTModel, OPTDecoder
-from .modeling_opt import OPTPreTrainedModel, OPTModel, OPTDecoder, OPTForCausalLM
+from modeling_opt import OPTPreTrainedModel, OPTModel, OPTDecoder, OPTForCausalLM
 from transformers.models.gpt2.modeling_gpt2 import GPT2PreTrainedModel, GPT2Model, GPT2LMHeadModel
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from typing import Callable, Dict, Optional, Union, List, Tuple

@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
-import transformers
 from packaging import version
 from linearhead_trainer import LinearHeadTrainer
 from torch import nn
@@ -20,7 +19,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
-from transformers.file_utils import is_datasets_available, is_in_notebook, is_torch_tpu_available
+from transformers.file_utils import is_datasets_available
 from transformers.integrations import (
     is_comet_available,
     is_optuna_available,
@@ -37,24 +36,13 @@ from transformers.trainer_callback import TrainerState
 from transformers.trainer_utils import TrainOutput
 from transformers.utils import logging
 
-_use_native_amp = False
-_use_apex = False
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
-if is_in_notebook():
-    from transformers.utils.notebook import NotebookProgressCallback
-
-    DEFAULT_PROGRESS_CALLBACK = NotebookProgressCallback
-
 # Check if Pytorch version >= 1.6 to switch between Native AMP and Apex
 if version.parse(torch.__version__) < version.parse("1.6"):
-    from transformers.file_utils import is_apex_available
-
-    if is_apex_available():
-        from apex import amp
-    _use_apex = True
+    raise EnvironmentError("Version of pytorch is lower than 1.6")
 else:
     _use_native_amp = True
 
@@ -65,11 +53,6 @@ else:
 
 if is_datasets_available():
     pass
-
-if is_torch_tpu_available():
-    import torch_xla.core.xla_model as xm
-    import torch_xla.debug.metrics as met
-    import torch_xla.distributed.parallel_loader as pl
 
 if is_tensorboard_available():
     from transformers.integrations import TensorBoardCallback
@@ -413,11 +396,6 @@ class Trainer(LinearHeadTrainer):
 
         model = self.model
 
-        if self.args.fp16 and _use_apex:
-            if not transformers.is_apex_available():
-                raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
-            model, optimizer = amp.initialize(model, optimizer, opt_level=self.args.fp16_opt_level)
-
         # Multi-gpu training (should be after apex fp16 initialization)
         if self.args.n_gpu > 1:
             model = torch.nn.DataParallel(model)
@@ -432,14 +410,11 @@ class Trainer(LinearHeadTrainer):
             )
 
         # Train
-        if transformers.is_torch_tpu_available():
-            total_train_batch_size = self.args.train_batch_size * xm.xrt_world_size()
-        else:
-            total_train_batch_size = (
-                    self.args.train_batch_size
-                    * self.args.gradient_accumulation_steps
-                    * (torch.distributed.get_world_size() if self.args.local_rank != -1 else 1)
-            )
+        total_train_batch_size = (
+            self.args.train_batch_size
+            * self.args.gradient_accumulation_steps
+            * (torch.distributed.get_world_size() if self.args.local_rank != -1 else 1)
+        )
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", self.num_examples(train_dataloader))
         logger.info("  Num Epochs = %d", num_train_epochs)
@@ -486,13 +461,7 @@ class Trainer(LinearHeadTrainer):
             if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
                 train_dataloader.sampler.set_epoch(epoch)
 
-            if transformers.is_torch_tpu_available():
-                parallel_loader = pl.ParallelLoader(train_dataloader, [self.args.device]).per_device_loader(
-                    self.args.device
-                )
-                epoch_iterator = tqdm(parallel_loader, desc="Iteration", disable=not self.is_local_process_zero())
-            else:
-                epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=True)
+            epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=True)
 
             # Reset the past mems state at the beginning of each epoch if necessary.
             if self.args.past_index >= 0:
@@ -566,7 +535,8 @@ class Trainer(LinearHeadTrainer):
                         # get number of zs to sample
                         num_zs = self.get_num_samples()
                         if num_zs > 1:
-                            assert self.args.zero_order_use_trainer_optim, 'cannot sample multiple zs without storing intermediate gradient. use trainer.'
+                            assert self.args.zero_order_use_trainer_optim, \
+                                'cannot sample multiple zs without storing intermediate gradient. use trainer.'
 
                         for _ in range(num_zs):
                             # prepare for sampling new zs
@@ -644,8 +614,7 @@ class Trainer(LinearHeadTrainer):
                     if self.args.zero_order_use_trainer_optim:
                         if (step + 1) % self.args.gradient_accumulation_steps == 0 or (
                                 # last step in epoch but step is always smaller than gradient_accumulation_steps
-                                len(epoch_iterator) <= self.args.gradient_accumulation_steps
-                                and (step + 1) == len(epoch_iterator)
+                                self.args.gradient_accumulation_steps >= len(epoch_iterator) == (step + 1)
                         ):
                             # Gradient norm clipping
                             if self.args.zero_order_clip_grad:
@@ -660,8 +629,7 @@ class Trainer(LinearHeadTrainer):
                                     self.args.logging_steps > 0 and self.state.global_step % self.args.logging_steps == 0) or (
                                     self.state.global_step == 1 and self.args.logging_first_step
                             ):
-                                logs = {}
-                                logs["loss"] = loss1.item()
+                                logs = {"loss": loss1.item()}
                                 if not self.args.zero_order_clip_grad:
                                     norm = 0.0
                                     for _, p in model.named_parameters():
@@ -731,14 +699,11 @@ class Trainer(LinearHeadTrainer):
 
                     if (step + 1) % self.args.gradient_accumulation_steps == 0 or (
                             # last step in epoch but step is always smaller than gradient_accumulation_steps
-                            len(epoch_iterator) <= self.args.gradient_accumulation_steps
-                            and (step + 1) == len(epoch_iterator)
+                            self.args.gradient_accumulation_steps >= len(epoch_iterator) == (step + 1)
                     ):
                         if self.args.fp16 and _use_native_amp:
                             self.scaler.unscale_(optimizer)
                             norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
-                        elif self.args.fp16:
-                            norm = torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), self.args.max_grad_norm)
                         else:
                             norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
 
@@ -747,9 +712,7 @@ class Trainer(LinearHeadTrainer):
                                 if p.grad is not None:
                                     p.grad = torch.sign(p.grad)
 
-                        if transformers.is_torch_tpu_available():
-                            xm.optimizer_step(optimizer)
-                        elif self.args.fp16 and _use_native_amp:
+                        if self.args.fp16 and _use_native_amp:
                             self.scaler.step(optimizer)
                             self.scaler.update()
                         else:
@@ -778,8 +741,8 @@ class Trainer(LinearHeadTrainer):
                             self.log(logs)
                             logger.info(str(logs))
 
-                if self.args.max_steps > 0 and self.state.global_step > self.args.max_steps or (
-                        self.args.max_zo_forward_steps > 0 and self.state.zo_forward_step > self.args.max_zo_forward_steps):
+                if (0 < self.args.max_steps < self.state.global_step or
+                        (0 < self.args.max_zo_forward_steps < self.state.zo_forward_step)):
                     epoch_iterator.close()
                     break
 
@@ -795,13 +758,10 @@ class Trainer(LinearHeadTrainer):
                         # Now we save this to (CPU) memory instead of disk <-- much faster
                         self.best_model_ckpt = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
-            if self.args.max_steps > 0 and self.state.global_step > self.args.max_steps or (
-                    self.args.max_zo_forward_steps > 0 and self.state.zo_forward_step > self.args.max_zo_forward_steps):
+            if (0 < self.args.max_steps < self.state.global_step or
+                    (0 < self.args.max_zo_forward_steps < self.state.zo_forward_step)):
                 # train_iterator.close()
                 break
-            if self.args.tpu_metrics_debug or self.args.debug:
-                # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-                xm.master_print(met.metrics_report())
 
         if self.args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
@@ -841,9 +801,5 @@ class Trainer(LinearHeadTrainer):
 
         self.log(output.metrics)
         logger.info(output.metrics)
-
-        if self.args.tpu_metrics_debug or self.args.debug:
-            # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-            xm.master_print(met.metrics_report())
 
         return output
