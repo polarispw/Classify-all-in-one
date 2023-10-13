@@ -9,8 +9,9 @@ import torch
 import torch.nn.functional as F
 from data.dataset import FewShotDataset
 from filelock import FileLock
+from configs.args_list import ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments
 from models.modeling_roberta import RobertaConfig
-from models.new_models import MODEL_TYPES, resize_token_type_embeddings, convert_opt_model
+from models.base_model import MODEL_TYPES, resize_token_type_embeddings, convert_opt_model
 from train.trainer import Trainer
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
 from transformers import HfArgumentParser, set_seed
@@ -24,8 +25,8 @@ logger.setLevel(logging.INFO)
 def main():
     parser = HfArgumentParser((ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        # If we pass only one argument to the script and it's the path to a json file,
-        # let's parse it to get our arguments.
+        # If we pass only one argument to the script, and it's the path to a json file,
+        # then parse it to get our arguments.
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
@@ -235,7 +236,7 @@ def main():
                 cache_dir=model_args.cache_dir,
                 **config_kwargs)
         else:
-            ...
+            raise ValueError("LoRA only implemented for RoBERTa")
     else:
         config = AutoConfig.from_pretrained(
             model_args.config_name if model_args.config_name else model_args.model_name_or_path,
@@ -283,6 +284,7 @@ def main():
             torch_dtype=torch.float16 if training_args.efficient_zero_order_fp16 else torch.float32,
             max_memory=max_memory,
         )
+
     else:
         model = model_fn.from_pretrained(
             model_args.model_name_or_path,
@@ -298,6 +300,8 @@ def main():
     if training_args.head_tuning:
         if model.config.model_type == "roberta":
             head_name = "lm_head"
+        else:
+            head_name = "###"
 
         for n, p in model.named_parameters():
             if head_name not in n:
@@ -390,7 +394,7 @@ def main():
     # Initialize our Trainer
     trainer_classes = {
         "standard": Trainer,
-        "linearhead": LinearHeadTrainer,
+        # "linearhead": LinearHeadTrainer,
     }
     trainer_class = trainer_classes[training_args.trainer]
     trainer_kwargs = {}
@@ -543,4 +547,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main(
+    main()
