@@ -1,4 +1,4 @@
 """
-transfer other format to json
+transfer other formats to json and conduct division
 """
 
