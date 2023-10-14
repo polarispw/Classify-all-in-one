@@ -314,11 +314,7 @@ def main():
         model = convert_opt_model(model, config, training_args.exclude_first_layers)
 
     if training_args.prefix_tuning:
-        ...
-        # from src.prefix import PrefixTuning
-        # PrefixTuning(model, num_prefix=training_args.num_prefix, reparam=not training_args.no_reparam,
-        #              float16=training_args.efficient_zero_order_fp16,
-        #              init_by_real_act=training_args.prefix_init_by_real_act)
+        raise ValueError("Prefix tuning has not been supported")
 
     # Get our special datasets.
     train_dataset = (
@@ -424,20 +420,7 @@ def main():
         train_result = trainer.train(
             model_path=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None)
 
-        if training_args.trainer == "hessian":
-            # Write the result to log
-            with FileLock('log_hessian.lock'):
-                with open('log_hessian', 'a') as f:
-                    train_result.update(vars(model_args))
-                    train_result.update(vars(training_args))
-                    train_result.update(vars(data_args))
-                    if 'evaluation_strategy' in train_result:
-                        train_result.pop('evaluation_strategy')
-                    f.write(str(train_result) + '\n')
-            exit()
-
         # Use the early stop, so do not save the model in the end (unless specify save_at_last)
-
         if training_args.trainer == "standard" or training_args.trainer == "linearhead":
             if training_args.save_at_last:
                 trainer.save_model(training_args.output_dir)

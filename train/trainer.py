@@ -3,17 +3,12 @@ The Trainer class, to easily train a 🤗 Transformers from scratch or finetune 
 """
 
 import collections
-import copy
 import os
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Dict, Optional
 
-import numpy as np
 import torch
-import torch.nn.functional as F
 from packaging import version
-from linearhead_trainer import LinearHeadTrainer
-from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -36,6 +31,7 @@ from transformers.trainer_callback import TrainerState
 from transformers.trainer_utils import TrainOutput
 from transformers.utils import logging
 
+from linearhead_trainer import LinearHeadTrainer
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
@@ -78,8 +74,10 @@ if is_ray_available():
 logger = logging.get_logger(__name__)
 logger.setLevel(logging.INFO)
 
+""" 
+The above part is copied from Transformers trainer (3.4.0)
+"""
 
-########## The above part is copied from Transformers' trainer (3.4.0) ##########
 
 def default_dev_objective(metrics):
     """
@@ -109,7 +107,7 @@ class Trainer(LinearHeadTrainer):
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         """
         Based on Transformers' default one, we add fixing layer option where the bottom n layers' parameters
-        are fixed and only the top layers are further fine-tuned.
+        are fixed and only the top layers will be fine-tuned.
         """
         if self.args.hf_inference_model:
             return
@@ -121,14 +119,15 @@ class Trainer(LinearHeadTrainer):
                     if 'encoder.layer' in n:
                         try:
                             layer_num = int(n[n.find('encoder.layer') + 14:].split('.')[0])
-                        except:
-                            print(n)
-                            raise Exception("")
+                        except ValueError:
+                            raise ValueError(f"Unexpected error when going through {n}, check its name")
+
                         if layer_num >= self.args.fix_layers:
                             print('yes', n)
                             params[n] = p
                         else:
                             print('no ', n)
+
                     elif 'embeddings' in n:
                         print('no ', n)
                     else:
@@ -161,6 +160,7 @@ class Trainer(LinearHeadTrainer):
                 )
             else:
                 raise NotImplementedError
+
         if self.lr_scheduler is None:
             self.lr_scheduler = get_scheduler(
                 self.args.lr_scheduler_type,
@@ -168,187 +168,6 @@ class Trainer(LinearHeadTrainer):
                 num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 num_training_steps=num_training_steps,
             )
-
-    def should_optim(self, name, param):
-        return (
-                    not self.args.layer_wise_optim or f".{self.state.global_step % self.model.config.num_hidden_layers}." in name) and param.requires_grad
-
-    def zo_forward(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
-        model.eval()
-        inputs = self._prepare_inputs(inputs)
-        if self.args.optimize_acc:
-            loss, logits = model(**inputs)
-            preds = F.softmax(logits, dim=-1)
-            acc = torch.sum(torch.argmax(preds, 1) == inputs['labels']) / len(preds)
-            loss = -acc
-        else:
-            with self.compute_loss_context_manager():
-                loss = self.compute_loss(model, inputs)
-            if self.args.n_gpu > 1:
-                loss = loss.mean()  # mean() to average on multi-gpu parallel training
-        self.state.zo_forward_step += 1
-        return loss.detach()
-
-    def efficient_perturb_parameters(self, model: nn.Module, random_seed: int, scaling_factor=1):
-        torch.manual_seed(random_seed)
-        for name, param in self.named_parameters_to_optim:
-            z = torch.normal(mean=0, std=1, size=param.data.size(), device=param.data.device, dtype=param.data.dtype)
-            param.data = param.data + scaling_factor * z * self.args.zero_order_eps
-        return model
-
-    def norm_perturb_parameters(self, model: nn.Module, random_vector=None, scaling_factor=1):
-        if random_vector is None:
-            random_vector = {}
-
-        for name, param in self.named_parameters_to_optim:
-            if name in random_vector:
-                z = random_vector[name]
-            else:
-                z = torch.normal(mean=0, std=1, size=param.data.size(), device=param.data.device,
-                                 dtype=param.data.dtype)
-                random_vector[name] = z
-
-            cname = self.retrieve_c(name)
-            if cname in self.cs:
-                z = z / self.cs[cname]
-
-            param.data = param.data + scaling_factor * z * self.args.zero_order_eps
-
-        return model, random_vector
-
-    def perturb_parameters(self, model: nn.Module, random_vector=None, scaling_factor=1):
-        if random_vector is None:
-            random_vector = {}
-
-        for name, param in self.named_parameters_to_optim:
-            if name in random_vector:
-                z = random_vector[name]
-            else:
-                z = torch.normal(mean=0, std=1, size=param.data.size(), device=param.data.device,
-                                 dtype=param.data.dtype)
-                random_vector[name] = z
-            param.data = param.data + scaling_factor * z * self.args.zero_order_eps
-
-        return model, random_vector
-
-    def perturb_single_layer(self, model, layer_name, random_vector=None, scaling_factor=1):
-        if random_vector is None:
-            random_vector = {}
-
-        for name, param in self.named_parameters_to_optim:
-            cname = self.retrieve_c(name)
-            if cname == layer_name:
-                if name in random_vector:
-                    z = random_vector[name]
-                else:
-                    z = torch.normal(mean=0, std=1, size=param.data.size(), device=param.data.device,
-                                     dtype=param.data.dtype)
-                    random_vector[name] = z
-                param.data = param.data + scaling_factor * z * self.args.zero_order_eps
-
-        return model, random_vector
-
-    def initialize_c(self, model, inputs):
-        self.named_parameters_to_optim = []
-        for name, param in model.named_parameters():
-            if self.should_optim(name, param):
-                self.named_parameters_to_optim.append((name, param))
-
-        self.cs = {'embed': 0.0, 'lm_head': 0.0}
-        # OPT: embed_tokens; embed_positions
-        # RoBERTa: embeddings
-        self.num_params = copy.deepcopy(self.cs)
-        self.num_model_layers = model.config.num_hidden_layers
-        layer_name = "layers" if model.config.model_type == "opt" else "layer"
-        for i in range(self.num_model_layers):
-            self.cs[f'{layer_name}.{i}.'] = 0.0
-            self.num_params[f'{layer_name}.{i}.'] = 0
-
-        # ZO estimation of c's
-        if self.args.zo_variant != 'param_norm' and self.args.use_zo_grad_est:
-            for layer in self.cs.keys():
-                with torch.no_grad():
-                    model, z = self.perturb_single_layer(model, layer_name=layer)
-                    loss1 = self.zo_forward(model, inputs)
-                    model, z = self.perturb_single_layer(model, layer_name=layer, random_vector=z, scaling_factor=-2)
-                    loss2 = self.zo_forward(model, inputs)
-
-                projected_grad = (loss1 - loss2) / (2 * self.args.zero_order_eps)
-                self.cs[layer] = torch.abs(projected_grad)
-
-                model, z = self.perturb_single_layer(model, layer_name=layer, random_vector=z)
-
-        # no need to run backprop if we are using parameter norm variant, can just measure them
-        elif self.args.zo_variant == 'param_norm':
-            for name, param in self.named_parameters_to_optim:
-                print(name)
-                ckey = self.retrieve_c(name)
-                if ckey in self.cs:
-                    self.cs[ckey] += torch.sum(param.data ** 2)
-                    self.num_params[ckey] += param.data.numel()
-
-            # take sqrt to get norm
-            for ckey in self.cs:
-                self.cs[ckey] = torch.sqrt(self.cs[ckey])
-                if self.args.scale_norm_by_num_params:
-                    self.cs[ckey] /= torch.sqrt(self.cs[ckey])
-
-            for ckey in self.cs:
-                if self.cs[ckey] != 0:
-                    self.cs[ckey] = self.cs[ckey].detach().item()
-
-        # backpropagation estimation fo ZO c's
-        #   this is mostly for debugging purposes to disentangle the variance from using ZO to estimate c
-        #   from the effectiveness of the preconditioners
-        else:
-            model.eval()
-            inputs = self._prepare_inputs(inputs)
-            with self.compute_loss_context_manager():
-                loss = self.compute_loss(model, inputs)
-            if self.args.n_gpu > 1:
-                loss = loss.mean()  # mean() to average on multi-gpu parallel training
-            loss.backward()
-            for name, param in self.named_parameters_to_optim:
-                if param.grad is None:
-                    print(name)
-                else:
-                    ckey = self.retrieve_c(name)
-                    if ckey in self.cs:
-                        self.cs[ckey] += torch.sum(param.grad ** 2)
-                        self.num_params[ckey] += param.grad.numel()
-
-            # take sqrt to get norm
-            for ckey in self.cs:
-                self.cs[ckey] = torch.sqrt(self.cs[ckey])
-                if self.args.scale_norm_by_num_params:
-                    self.cs[ckey] /= torch.sqrt(self.num_params[ckey])
-
-            for ckey in self.cs:
-                if self.cs[ckey] != 0:
-                    self.cs[ckey] = self.cs[ckey].detach().item()
-
-        self.layer_names = list(self.cs.keys())
-        model.zero_grad()
-
-    def retrieve_c(self, param_name):
-        for c_name in self.cs.keys():
-            if c_name in param_name:
-                return c_name
-
-        return ''  # these parameters are likely not being used in the forward pass
-
-    def get_num_samples(self):
-        if self.args.zero_order_sample_scheduler is None:
-            noise_sample_time = 1
-        elif self.args.zero_order_sample_scheduler == "linear":
-            noise_sample_time = max(1, int(self.state.global_step / self.args.max_steps * self.args.zero_order_sample))
-        elif self.args.zero_order_sample_scheduler == "constant":
-            noise_sample_time = int(self.args.zero_order_sample)
-        else:
-            raise NotImplementedError
-        # print("Sample %d zs" % (noise_sample_time))
-
-        return noise_sample_time
 
     def train(self, model_path=None, dev_objective=None):
         """
@@ -411,9 +230,9 @@ class Trainer(LinearHeadTrainer):
 
         # Train
         total_train_batch_size = (
-            self.args.train_batch_size
-            * self.args.gradient_accumulation_steps
-            * (torch.distributed.get_world_size() if self.args.local_rank != -1 else 1)
+                self.args.train_batch_size
+                * self.args.gradient_accumulation_steps
+                * (torch.distributed.get_world_size() if self.args.local_rank != -1 else 1)
         )
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", self.num_examples(train_dataloader))
@@ -440,7 +259,7 @@ class Trainer(LinearHeadTrainer):
             try:
                 self.state.global_step = int(model_path.split("-")[-1].split("/")[0])
                 epochs_trained = self.state.global_step // (
-                            len(train_dataloader) // self.args.gradient_accumulation_steps)
+                        len(train_dataloader) // self.args.gradient_accumulation_steps)
                 steps_trained_in_current_epoch = self.state.global_step % (
                         len(train_dataloader) // self.args.gradient_accumulation_steps
                 )
@@ -472,274 +291,57 @@ class Trainer(LinearHeadTrainer):
                     assert model.module.model_type == 'opt', 'did not implement embedding layer synchronization for non-OPT models'
                     model.module.model.decoder.embed_tokens.weight = model.module.lm_head.weight
 
-                # estimate c's (param or grad norm) on epoch 0
-                if epoch == 0 and step == 0 and self.args.zo_variant is not None:
-                    self.initialize_c(model, inputs)
-                elif step == 0 and self.args.zo_variant is not None and self.args.recompute_norms:
-                    self.initialize_c(model, inputs)
-
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
                     steps_trained_in_current_epoch -= 1
                     continue
 
-                if self.args.zero_order_optim:
-                    # Get parameters that should be optimized (for layer-wise optimization and prefix-tuning)
-                    self.named_parameters_to_optim = []
-                    for name, param in model.named_parameters():
-                        if self.should_optim(name, param):
-                            self.named_parameters_to_optim.append((name, param))
-
-                    if self.args.zo_by_layer:
-                        assert not self.args.efficient_zero_order, 'did not implement preconditioned ZO for efficient ZO yet'
-                        assert self.args.zero_order_use_trainer_optim, 'preconditioned ZO requires using the trainer optimizer'
-                        num_zs = self.get_num_samples()
-                        layers = [np.random.choice(self.layer_names)] if self.args.pc_rnd_layer else self.layer_names
-
-                        # for each layer: perturb only that layer and store the gradient estimates in the grad buffer
-                        for layer in self.layer_names:
-                            for _ in range(num_zs):
-                                c_i = self.cs[layer]
-                                with torch.no_grad():
-                                    c_i = 1.0 if c_i == 0 else c_i  # if the scaling is 0, just reset it to 1 so that there can eventually be some gradient to those layers
-                                    model, random_vector = self.perturb_single_layer(model, layer,
-                                                                                     scaling_factor=1.0 / c_i)
-                                    loss1 = self.zo_forward(model, inputs)
-                                    model, random_vector = self.perturb_single_layer(model, layer,
-                                                                                     random_vector=random_vector,
-                                                                                     scaling_factor=-2.0 / c_i)
-                                    loss2 = self.zo_forward(model, inputs)
-                                    model, random_vector = self.perturb_single_layer(model, layer,
-                                                                                     random_vector=random_vector,
-                                                                                     scaling_factor=1.0 / c_i)
-
-                                projected_grad = (loss1 - loss2) / (2 * self.args.zero_order_eps)
-                                # scale grad according to number of zs sampled
-                                if not self.args.scale_lr_with_samples:
-                                    projected_grad = projected_grad / float(num_zs)
-
-                                for name, param in self.named_parameters_to_optim:
-                                    if self.retrieve_c(name) == layer:
-                                        z_tilde = random_vector[name] * c_i
-
-                                        if param.grad is None:
-                                            param.grad = projected_grad * z_tilde
-                                        else:
-                                            param.grad += projected_grad * z_tilde
-
-                                # note that  | E_z [ <z, grad of one layer > ] | is equal to norm of grad for that layer for gaussian z
-                                # leverages this fact to update the grad norms
-                                if self.args.zo_variant == 'grad_norm' and self.args.norm_running_update:
-                                    self.cs[layer] = torch.abs(projected_grad)
-                    else:
-                        # get number of zs to sample
-                        num_zs = self.get_num_samples()
-                        if num_zs > 1:
-                            assert self.args.zero_order_use_trainer_optim, \
-                                'cannot sample multiple zs without storing intermediate gradient. use trainer.'
-
-                        for _ in range(num_zs):
-                            # prepare for sampling new zs
-                            random_vector = None
-                            if self.args.efficient_zero_order:
-                                random_seed = np.random.randint(1000000000)
-
-                            with torch.no_grad():
-                                # first function evaluation
-                                if self.args.efficient_zero_order:
-                                    model = self.efficient_perturb_parameters(model, random_seed)
-                                elif self.args.zo_variant is not None:
-                                    model, random_vector = self.norm_perturb_parameters(model)
-                                else:
-                                    model, random_vector = self.perturb_parameters(model)
-                                loss1 = self.zo_forward(model, inputs)
-
-                                # second function evaluation
-                                if self.args.efficient_zero_order:
-                                    model = self.efficient_perturb_parameters(model, random_seed, scaling_factor=-2)
-                                elif self.args.zo_variant is not None:
-                                    model, random_vector = self.norm_perturb_parameters(model, random_vector,
-                                                                                        scaling_factor=-2)
-                                else:
-                                    model, random_vector = self.perturb_parameters(model, random_vector,
-                                                                                   scaling_factor=-2)
-                                loss2 = self.zo_forward(model, inputs)
-
-                            projected_grad = (loss1 - loss2) / (2 * self.args.zero_order_eps)
-
-                            # scale grad according to accumulation
-                            if self.args.gradient_accumulation_steps > 1:
-                                assert self.args.zero_order_use_trainer_optim, 'grad accumulation not implemented for non-trainer ZO yet'
-                                projected_grad = projected_grad / self.args.gradient_accumulation_steps
-
-                            # scale grad according to number of zs sampled
-                            if not self.args.scale_lr_with_samples:
-                                projected_grad = projected_grad / float(num_zs)
-
-                            # store gradient in parameter buffer if using trainer
-                            # o/w, the loop will exit after one round and the update will be applied directly (see below)
-                            if self.args.zero_order_use_trainer_optim:
-                                if self.args.efficient_zero_order:
-                                    # print(random_seed)
-                                    torch.manual_seed(random_seed)
-
-                                for name, param in self.named_parameters_to_optim:
-                                    # recover noise used in perturbations
-                                    if self.args.efficient_zero_order:
-                                        z = torch.normal(mean=0, std=1, size=param.data.size(),
-                                                         device=param.data.device, dtype=param.data.dtype)
-                                    else:
-                                        z = random_vector[name]
-
-                                    if self.args.zo_variant is not None and not self.args.change_grad_estimate:
-                                        cname = self.retrieve_c(name)
-                                        if cname in self.cs:
-                                            z = z * self.cs[cname]
-
-                                    if param.grad is None:
-                                        param.grad = projected_grad * z
-                                    else:
-                                        param.grad += projected_grad * z
-
-                            # reset model back to its parameters at start of step
-                            if self.args.efficient_zero_order:
-                                model = self.efficient_perturb_parameters(model, random_seed)
-                            elif self.args.zo_variant is not None:
-                                model, random_vector = self.norm_perturb_parameters(model, random_vector)
-                            else:
-                                model, random_vector = self.perturb_parameters(model, random_vector)
-
-                    # apply gradient updates
-                    # if using trainer, follow trainer logic to clip grad and check if parameters should be updated
-                    if self.args.zero_order_use_trainer_optim:
-                        if (step + 1) % self.args.gradient_accumulation_steps == 0 or (
-                                # last step in epoch but step is always smaller than gradient_accumulation_steps
-                                self.args.gradient_accumulation_steps >= len(epoch_iterator) == (step + 1)
-                        ):
-                            # Gradient norm clipping
-                            if self.args.zero_order_clip_grad:
-                                norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
-
-                            # Update the parameters and step scheduler
-                            optimizer.step()
-                            scheduler.step()
-
-                            # logging
-                            if (
-                                    self.args.logging_steps > 0 and self.state.global_step % self.args.logging_steps == 0) or (
-                                    self.state.global_step == 1 and self.args.logging_first_step
-                            ):
-                                logs = {"loss": loss1.item()}
-                                if not self.args.zero_order_clip_grad:
-                                    norm = 0.0
-                                    for _, p in model.named_parameters():
-                                        if p.grad is not None:
-                                            norm += torch.sum(p.grad ** 2)
-                                    norm = torch.sqrt(norm)
-                                logs["grad_norm"] = norm.item()
-                                logs["learning_rate"] = (
-                                    scheduler.get_last_lr()[0]
-                                    if version.parse(torch.__version__) >= version.parse("1.4")
-                                    else scheduler.get_lr()[0]
-                                )
-                                logs["num_zs"] = num_zs
-                                logs["global_step"] = self.state.global_step
-                                logs["zo_forward_step"] = self.state.zo_forward_step
-                                logs["max_steps"] = self.args.max_steps
-                                logs["max_zo_forward_steps"] = self.args.max_zo_forward_steps
-                                logs["time"] = int(time.time() - start_time)
-                                self.log(logs)
-                                logger.info(str(logs))
-
-                            model.zero_grad()
-                            self.state.global_step += 1
-                            self.epoch = epoch + (step + 1) / len(epoch_iterator)
-                    # if not using the trainer, the updates are resampled and directly applied to the parameters
-                    else:
-                        # Efficient mode 
-                        # WARNING: no gradient accumulation when not storing the grad
-                        assert self.args.gradient_accumulation_steps == 1, 'gradient accumulation is not supported for zero-order optimization'
-                        assert self.args.zero_order_sample_scheduler is None
-                        assert not self.args.zero_order_clip_grad, 'gradient clipping not implemented yet for non-trainer ZO'
-
-                        if self.args.efficient_zero_order:
-                            torch.manual_seed(random_seed)
-                        for name, param in self.named_parameters_to_optim:
-                            if self.args.efficient_zero_order:
-                                z = torch.normal(mean=0, std=1, size=param.data.size(), device=param.data.device,
-                                                 dtype=param.data.dtype)
-                            else:
-                                z = random_vector[name]
-                            param.data = param.data - self.args.learning_rate * projected_grad * z
-
-                        if (self.args.logging_steps > 0 and self.state.global_step % self.args.logging_steps == 0) or (
-                                self.state.global_step == 1 and self.args.logging_first_step
-                        ):
-                            logs = {}
-                            logs["loss"] = loss1.item()
-                            logs["learning_rate"] = self.args.learning_rate
-                            logs["global_step"] = self.state.global_step
-                            logs["zo_forward_step"] = self.state.zo_forward_step
-                            logs["max_steps"] = self.args.max_steps
-                            logs["max_zo_forward_steps"] = self.args.max_zo_forward_steps
-                            logs["time"] = int(time.time() - start_time)
-                            self.log(logs)
-                            logger.info(str(logs))
-
-                        self.state.global_step += 1
-                        self.epoch = epoch + (step + 1) / len(epoch_iterator)
-
-                    # Debug information
-                    # print("%.5f, %.5f" % (loss1.item(), loss2.item()))
-                    # print("Loss: %.10f, projected_grad: %.5f" % (loss1, projected_grad))
-
                 # standard, non-ZO optimization
-                else:
-                    tr_loss += self.training_step(model, inputs)
+                tr_loss += self.training_step(model, inputs)
 
-                    if (step + 1) % self.args.gradient_accumulation_steps == 0 or (
-                            # last step in epoch but step is always smaller than gradient_accumulation_steps
-                            self.args.gradient_accumulation_steps >= len(epoch_iterator) == (step + 1)
+                if (step + 1) % self.args.gradient_accumulation_steps == 0 or (
+                        # last step in epoch but step is always smaller than gradient_accumulation_steps
+                        self.args.gradient_accumulation_steps >= len(epoch_iterator) == (step + 1)
+                ):
+                    if self.args.fp16 and _use_native_amp:
+                        self.scaler.unscale_(optimizer)
+                        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
+                    else:
+                        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
+
+                    if self.args.optimizer_variant == 'signgd':
+                        for n, p in model.named_parameters():
+                            if p.grad is not None:
+                                p.grad = torch.sign(p.grad)
+
+                    if self.args.fp16 and _use_native_amp:
+                        self.scaler.step(optimizer)
+                        self.scaler.update()
+                    else:
+                        optimizer.step()
+
+                    scheduler.step()
+                    model.zero_grad()
+                    self.state.global_step += 1
+                    self.epoch = epoch + (step + 1) / len(epoch_iterator)
+
+                    if (self.args.logging_steps > 0 and self.state.global_step % self.args.logging_steps == 0) or (
+                            self.state.global_step == 1 and self.args.logging_first_step
                     ):
-                        if self.args.fp16 and _use_native_amp:
-                            self.scaler.unscale_(optimizer)
-                            norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
-                        else:
-                            norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
+                        logs = {}
+                        tr_loss_scalar = tr_loss.item()
+                        logs["loss"] = (tr_loss_scalar - logging_loss_scalar) / self.args.logging_steps
+                        logs["norm"] = norm.item()
+                        # backward compatibility for pytorch schedulers
+                        logs["learning_rate"] = (
+                            scheduler.get_last_lr()[0]
+                            if version.parse(torch.__version__) >= version.parse("1.4")
+                            else scheduler.get_lr()[0]
+                        )
+                        logging_loss_scalar = tr_loss_scalar
 
-                        if self.args.optimizer_variant == 'signgd':
-                            for n, p in model.named_parameters():
-                                if p.grad is not None:
-                                    p.grad = torch.sign(p.grad)
-
-                        if self.args.fp16 and _use_native_amp:
-                            self.scaler.step(optimizer)
-                            self.scaler.update()
-                        else:
-                            optimizer.step()
-
-                        scheduler.step()
-                        model.zero_grad()
-                        self.state.global_step += 1
-                        self.epoch = epoch + (step + 1) / len(epoch_iterator)
-
-                        if (self.args.logging_steps > 0 and self.state.global_step % self.args.logging_steps == 0) or (
-                                self.state.global_step == 1 and self.args.logging_first_step
-                        ):
-                            logs = {}
-                            tr_loss_scalar = tr_loss.item()
-                            logs["loss"] = (tr_loss_scalar - logging_loss_scalar) / self.args.logging_steps
-                            logs["norm"] = norm.item()
-                            # backward compatibility for pytorch schedulers
-                            logs["learning_rate"] = (
-                                scheduler.get_last_lr()[0]
-                                if version.parse(torch.__version__) >= version.parse("1.4")
-                                else scheduler.get_lr()[0]
-                            )
-                            logging_loss_scalar = tr_loss_scalar
-
-                            self.log(logs)
-                            logger.info(str(logs))
+                        self.log(logs)
+                        logger.info(str(logs))
 
                 if (0 < self.args.max_steps < self.state.global_step or
                         (0 < self.args.max_zo_forward_steps < self.state.zo_forward_step)):
