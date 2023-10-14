@@ -1,3 +1,7 @@
+"""
+ref https://github.com/chatanywhere/GPT_API_free
+"""
+
 import openai
 
 # openai.log = "debug"

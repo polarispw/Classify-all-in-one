@@ -298,11 +298,6 @@ class DynamicTrainingArguments(TrainingArguments):
         metadata={'help': 'configures the output directories to be informative when running W&B sweep'}
     )
 
-    # prefix tuning hyperparameters
-    prefix_tuning: bool = field(
-        default=False,
-        metadata={"help": "Prefix tuning"}
-    )
     num_prefix: int = field(
         default=10,
         metadata={"help": "How many prefix tokens to use"}
@@ -325,11 +320,6 @@ class DynamicTrainingArguments(TrainingArguments):
         default=0,
         metadata={
             'help': 'Stop at this number of ZO forward steps. The trainer will take whichever is reached first, max_steps or max_zo_forward_steps.'}
-    )
-
-    tie_emb: bool = field(
-        default=False,
-        metadata={"help": "Tie embeddings from lm head. Only work for RoBERTa!!"}
     )
 
     optimize_acc: bool = field(

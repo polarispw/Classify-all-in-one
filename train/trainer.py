@@ -5,7 +5,7 @@ The Trainer class, to easily train a 🤗 Transformers from scratch or finetune 
 import collections
 import os
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import torch
 from packaging import version
@@ -28,7 +28,7 @@ from transformers.trainer_callback import (
     ProgressCallback,
 )
 from transformers.trainer_callback import TrainerState
-from transformers.trainer_utils import TrainOutput
+from transformers.trainer_utils import TrainOutput, EvalLoopOutput
 from transformers.utils import logging
 
 from linearhead_trainer import LinearHeadTrainer
@@ -356,7 +356,6 @@ class Trainer(LinearHeadTrainer):
                         logger.info("Best dev result: {}".format(objective))
                         self.objective = objective
                         # self.save_model(self.args.output_dir)
-
                         # Now we save this to (CPU) memory instead of disk <-- much faster
                         self.best_model_ckpt = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
@@ -369,14 +368,13 @@ class Trainer(LinearHeadTrainer):
             # Clean the state at the end of training
             delattr(self, "_past")
 
-        logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
+        logger.info("\n\nTraining completed!)\n\n")
         return TrainOutput(self.state.global_step, tr_loss / self.state.global_step, metrics), self.objective
 
-    """
-    Difference compared to original implementation: return output instead of output.metrics (so there is also the logits)
-    """
-
-    def evaluate(self, eval_dataset: Optional[Dataset] = None) -> Dict[str, float]:
+    def evaluate(self,
+                 eval_dataset: Optional[Dataset] = None,
+                 ignore_keys: Optional[List[str]] = None,
+                 metric_key_prefix: str = "eval", ) -> EvalLoopOutput:
         """
         Run evaluation and returns metrics.
 
@@ -386,13 +384,19 @@ class Trainer(LinearHeadTrainer):
         You can also subclass and override this method to inject custom behavior.
 
         Args:
-            eval_dataset (:obj:`Dataset`, `optional`):
-                Pass a dataset if you wish to override :obj:`self.eval_dataset`. If it is an :obj:`datasets.Dataset`,
-                columns not accepted by the ``model.forward()`` method are automatically removed. It must implement
-                the :obj:`__len__` method.
+            eval_dataset (`Dataset`, *optional*):
+                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns
+                not accepted by the `model.forward()` method are automatically removed. It must implement the `__len__`
+                method.
+            ignore_keys (`List[str]`, *optional*):
+                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
+                gathering predictions.
+            metric_key_prefix (`str`, *optional*, defaults to `"eval"`):
+                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
+                "eval_bleu" if the prefix is "eval" (default)
 
         Returns:
-            A dictionary containing the evaluation loss and the potential metrics computed from the predictions.
+            Return output instead of output.metrics (so there is also logits)
         """
         if eval_dataset is not None and not isinstance(eval_dataset, collections.abc.Sized):
             raise ValueError("eval_dataset must implement __len__")

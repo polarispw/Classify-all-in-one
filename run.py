@@ -11,7 +11,7 @@ from data.dataset import MyDataset, MyDataCollatorWithPadding
 from filelock import FileLock
 from configs.args_list import ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments
 from models.modeling_roberta import RobertaConfig
-from models.base_model import MODEL_TYPES, resize_token_type_embeddings, convert_opt_model
+from models.base_model import MODEL_TYPES, resize_token_type_embeddings
 from train.trainer import Trainer
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
 from transformers import HfArgumentParser, set_seed
@@ -22,6 +22,8 @@ logger.setLevel(logging.INFO)
 
 
 def main():
+    # parse arguments
+
     parser = HfArgumentParser((ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script, and it's the path to a json file,
@@ -38,12 +40,6 @@ def main():
     if model_args.apply_lora:
         assert 'roberta' in model_args.model_name_or_path, 'LoRA only implemented for RoBERTa models'
 
-    if training_args.kernel_formula == 'asymmetric_signgd':
-        assert training_args.binary_classification, 'asymmetric solver not implemented for multi-class setting, use --binary_classification'
-
-    if training_args.optimizer_variant != '':
-        assert training_args.optimizer == 'sgd', 'variants on optimizer are only implemented for SGD'
-
     if 'prompt' in model_args.few_shot_type:
         data_args.prompt = True
 
@@ -54,11 +50,34 @@ def main():
         training_args.do_predict = False
 
     # Setup logging
+
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO if training_args.local_rank in [-1, 0] else logging.WARN,
     )
+
+    # Check save path
+    if (
+            os.path.exists(training_args.output_dir)
+            and os.listdir(training_args.output_dir)
+            and training_args.do_train
+            and not training_args.overwrite_output_dir
+    ):
+        raise ValueError(f"Output directory ({training_args.output_dir}) already exists.")
+
+    logger.warning(
+        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
+        training_args.local_rank,
+        training_args.device,
+        training_args.n_gpu,
+        bool(training_args.local_rank != -1),
+        training_args.fp16,
+    )
+    logger.info("Training/evaluation parameters %s", training_args)
+
+    # Set seed
+    set_seed(training_args.seed)
 
     # Load prompt/template/mapping file
     if data_args.prompt:
@@ -105,28 +124,6 @@ def main():
                 data_args.mapping = mapping_list[data_args.mapping_id]
                 logger.info("Specify using the %d-th mapping: %s" % (data_args.mapping_id, data_args.mapping))
 
-    # Check save path
-    if (
-            os.path.exists(training_args.output_dir)
-            and os.listdir(training_args.output_dir)
-            and training_args.do_train
-            and not training_args.overwrite_output_dir
-    ):
-        raise ValueError(f"Output directory ({training_args.output_dir}) already exists.")
-
-    logger.warning(
-        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
-        training_args.local_rank,
-        training_args.device,
-        training_args.n_gpu,
-        bool(training_args.local_rank != -1),
-        training_args.fp16,
-    )
-    logger.info("Training/evaluation parameters %s", training_args)
-
-    # Set seed
-    set_seed(training_args.seed)
-
     try:
         num_labels = num_labels_mapping[data_args.task_name]
         output_mode = output_modes_mapping[data_args.task_name]
@@ -134,93 +131,6 @@ def main():
             "Task name: {}, number of labels: {}, output mode: {}".format(data_args.task_name, num_labels, output_mode))
     except KeyError:
         raise ValueError("Task not found: %s" % (data_args.task_name))
-
-    # Automatically generate template for using demonstrations
-    if data_args.auto_demo and model_args.few_shot_type == 'prompt-demo':
-        # GPT-3's in-context learning
-        if data_args.gpt3_in_context_head or data_args.gpt3_in_context_tail:
-            logger.info("Automatically convert the template to GPT-3's in-context learning.")
-            assert data_args.template_list is None
-
-            old_template = data_args.template
-            new_template = old_template + ''
-            new_sfc_template = data_args.sfc_prompt + ''
-            old_template = old_template.replace('*cls*', '')
-            old_template = old_template.replace('*bos*', '')
-            if data_args.gpt3_in_context_head:
-                new_template = new_template.replace('*cls*', '')
-                new_template = new_template.replace('*bos*', '')
-
-            # Single sentence or sentence pair?
-            sent_num = 1
-            if "_1" in old_template:
-                sent_num = 2
-            for instance_id in range(data_args.gpt3_in_context_num):
-                sub_template = old_template + ''
-                # Replace sent_id
-                for sent_id in range(sent_num):
-                    sub_template = sub_template.replace("_{}*".format(sent_id),
-                                                        "_{}*".format(sent_num + sent_num * instance_id + sent_id))
-                # Replace mask
-                if "opt" in model_args.model_name_or_path or "gpt" in model_args.model_name_or_path:
-                    sub_template = sub_template + "*labelx_{}*".format(instance_id)
-                else:
-                    sub_template = sub_template.replace("*mask*", "*labelx_{}*".format(instance_id))
-                if data_args.gpt3_in_context_tail:
-                    new_template = new_template + data_args.gpt3_demo_separator + sub_template  # Put context at the end
-                    new_sfc_template = new_sfc_template + data_args.gpt3_demo_separator + sub_template
-                else:
-                    new_template = sub_template + data_args.gpt3_demo_separator + new_template  # Put context at the beginning
-                    new_sfc_template = sub_template + data_args.gpt3_demo_separator + new_sfc_template
-            if data_args.gpt3_in_context_head:
-                new_template = "*bos*" + new_template
-                new_sfc_template = "*bos*" + new_sfc_template
-            logger.info("| {} => {}".format(data_args.template, new_template))
-            logger.info("New SFC template (in-context learning): {}".format(new_sfc_template))
-            data_args.template = new_template
-            if model_args.icl_sfc:
-                data_args.icl_sfc_prompt = new_sfc_template
-        else:
-            logger.info("Automatically convert the template to using demonstrations.")
-            if data_args.template_list is not None:
-                for i in range(len(data_args.template_list)):
-                    old_template = data_args.template_list[i]
-                    new_template = old_template + ''
-                    old_template = old_template.replace('*cls*', '')
-                    # Single sentence or sentence pair?
-                    sent_num = 1
-                    if "_1" in old_template:
-                        sent_num = 2
-                    for label_id in range(num_labels):
-                        sub_template = old_template + ''
-                        # Replace sent id
-                        for sent_id in range(sent_num):
-                            sub_template = sub_template.replace("_{}*".format(sent_id),
-                                                                "_{}*".format(sent_num + sent_num * label_id + sent_id))
-                        # Replace mask
-                        sub_template = sub_template.replace("*mask*", "*label_{}*".format(label_id))
-                        new_template = new_template + sub_template
-                    logger.info("| {} => {}".format(data_args.template_list[i], new_template))
-                    data_args.template_list[i] = new_template
-            else:
-                old_template = data_args.template
-                new_template = old_template + ''
-                old_template = old_template.replace('*cls*', '')
-                # Single sentence or sentence pair?
-                sent_num = 1
-                if "_1" in old_template:
-                    sent_num = 2
-                for label_id in range(num_labels):
-                    sub_template = old_template + ''
-                    # Replace sent id
-                    for sent_id in range(sent_num):
-                        sub_template = sub_template.replace("_{}".format(sent_id),
-                                                            "_{}".format(sent_num + sent_num * label_id + sent_id))
-                    # Replace mask
-                    sub_template = sub_template.replace("*mask*", "*label_{}*".format(label_id))
-                    new_template = new_template + sub_template
-                logger.info("| {} => {}".format(data_args.template, new_template))
-                data_args.template = new_template
 
     # Create config
     config_kwargs = {'apply_lora': model_args.apply_lora,
@@ -261,10 +171,6 @@ def main():
         additional_special_tokens=special_tokens,
         cache_dir=model_args.cache_dir,
     )
-    if "opt" in model_args.model_name_or_path:
-        # Set SEP token
-        tokenizer.sep_token_id = tokenizer.eos_token_id
-        tokenizer.bos_token_id = 0
     if "gpt2" in model_args.model_name_or_path:
         tokenizer.sep_token_id = tokenizer.eos_token_id
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -283,7 +189,6 @@ def main():
             torch_dtype=torch.float16 if training_args.efficient_zero_order_fp16 else torch.float32,
             max_memory=max_memory,
         )
-
     else:
         model = model_fn.from_pretrained(
             model_args.model_name_or_path,
@@ -292,9 +197,8 @@ def main():
             cache_dir=model_args.cache_dir,
         )
 
-    if training_args.tie_emb:
-        logger.warning("Tie embeddings. Only work for RoBERTa (in our code by default they are not tied)")
-        model.tie_emb()
+    if training_args.random_model_init:
+        model.init_weights()  # reinit weights to random
 
     if training_args.head_tuning:
         if model.config.model_type == "roberta":
@@ -309,12 +213,6 @@ def main():
                 logger.info(f"Only tuning {n}")
 
     tokenizer.model_type = model.config.model_type
-
-    if training_args.exclude_first_layers != -1:
-        model = convert_opt_model(model, config, training_args.exclude_first_layers)
-
-    if training_args.prefix_tuning:
-        raise ValueError("Prefix tuning has not been supported")
 
     # Get our special datasets.
     train_dataset = (
@@ -333,11 +231,6 @@ def main():
         else None
     )
 
-    set_seed(training_args.seed)
-
-    if training_args.random_model_init:
-        model.init_weights()  # reinit weights to random
-
     # For BERT, increase the size of the segment (token type) embeddings
     if config.model_type == 'bert':
         model.resize_token_embeddings(len(tokenizer))
@@ -346,9 +239,6 @@ def main():
     # Pass dataset and argument information to the model
     if eval_dataset.label_word_list is not None:
         model.label_word_list = torch.tensor(eval_dataset.label_word_list).long().to(training_args.device)
-    if output_modes_mapping[data_args.task_name] == 'regression':
-        # lower / upper bounds
-        model.lb, model.ub = bound_mapping[data_args.task_name]
     model.model_args = model_args
     model.data_args = data_args
     model.tokenizer = tokenizer
@@ -386,10 +276,11 @@ def main():
 
         return compute_metrics_fn
 
-    # Initialize our Trainer
+    # Initialize Trainer to be used
     trainer_classes = {
         "standard": Trainer,
-        # "linearhead": LinearHeadTrainer,
+        # "prompt":
+        # "in-context":
     }
     trainer_class = trainer_classes[training_args.trainer]
     trainer_kwargs = {}
@@ -403,25 +294,13 @@ def main():
         **trainer_kwargs
     )
 
-    # Calibration
-    if model_args.sfc:
-        inputs = tokenizer([data_args.sfc_prompt.replace("_", " ")], return_tensors="pt")
-        logger.info(f"Calibrating SFC with prompt: {data_args.sfc_prompt}")
-        logger.info("Inputs: {}".format(inputs.input_ids))
-        inputs = inputs.to(model.device)
-        with torch.no_grad():
-            model.eval()
-            logits = model(**inputs)[0]
-        model.sfc_bias = F.log_softmax(logits.squeeze(0).detach())
-        logger.info("SFC bias: {}".format(model.sfc_bias))
-
     # Training
     if training_args.do_train:
         train_result = trainer.train(
             model_path=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None)
 
         # Use the early stop, so do not save the model in the end (unless specify save_at_last)
-        if training_args.trainer == "standard" or training_args.trainer == "linearhead":
+        if training_args.trainer in trainer_classes.keys():
             if training_args.save_at_last:
                 trainer.save_model(training_args.output_dir)
 
@@ -430,28 +309,19 @@ def main():
                 torch.save(model_args, os.path.join(training_args.output_dir, "model_args.bin"))
                 torch.save(data_args, os.path.join(training_args.output_dir, "data_args.bin"))
 
-            if training_args.evaluate_during_training:
-                # Reload the best checkpoint (for eval)
+            if training_args.do_eval or training_args.do_predict:
+                # Reload the best checkpoint (for eval) from disk
                 # model.load_state_dict(trainer.best_model_ckpt)
-                # if training_args.prefix_tuning:
-                #     # We can load prefix by directly using load_state_dict
-                #     model.load_state_dict(torch.load(os.path.join(training_args.output_dir, "pytorch_model.bin")))
-                # else:
-                #     model = model_fn.from_pretrained(training_args.output_dir)
-                # if training_args.exclude_first_layers != -1:
-                #     model = convert_opt_model(model, config, training_args.exclude_first_layers)
-
-                # model = model.to(training_args.device)
-
-                # Now we just reload this from memory instead of disk <-- much faster
+                # Now we just reload this from cpu memory instead of disk
                 trainer.model.load_state_dict(trainer.best_model_ckpt)
 
-    # Evaluation
+    # Output Dic
     final_result = {
         'time': str(datetime.today()),
         'output_dir': training_args.output_dir
     }
 
+    # Evaluation
     eval_results = {}
     if training_args.do_eval:
         logger.info("*** Validate ***")
@@ -475,9 +345,11 @@ def main():
                         final_result[eval_dataset.args.task_name + '_dev_' + key] = value
             eval_results.update(eval_result)
 
+    # Test
     test_results = {}
     if training_args.do_predict:
         logging.info("*** Test ***")
+
         test_datasets = [test_dataset]
 
         for test_dataset in test_datasets:

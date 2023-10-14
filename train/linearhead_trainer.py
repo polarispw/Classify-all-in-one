@@ -2,14 +2,14 @@
 A trainer for finding linear probing solutions
 """
 import collections
-from typing import Dict, Optional
+from typing import Optional, List
 
 import torch
 import torch.nn.functional as F
 import transformers
 from sklearn.linear_model import LinearRegression, LogisticRegressionCV
 from torch.utils.data.dataset import Dataset
-from transformers.trainer_utils import TrainOutput
+from transformers.trainer_utils import TrainOutput, EvalLoopOutput
 from transformers.utils import logging
 
 from models.base_model import MODEL_TYPES
@@ -181,11 +181,10 @@ class LinearHeadTrainer(transformers.Trainer):
 
         return TrainOutput(0, train_loss, {}), self.objective
 
-    """
-    Difference compared to original implementation: return output instead of output.metrics (so there is also the logits)
-    """
-
-    def evaluate(self, eval_dataset: Optional[Dataset] = None) -> Dict[str, float]:
+    def evaluate(self,
+                 eval_dataset: Optional[Dataset] = None,
+                 ignore_keys: Optional[List[str]] = None,
+                 metric_key_prefix: str = "eval", ) -> EvalLoopOutput:
         """
         Run evaluation and returns metrics.
 
@@ -195,13 +194,19 @@ class LinearHeadTrainer(transformers.Trainer):
         You can also subclass and override this method to inject custom behavior.
 
         Args:
-            eval_dataset (:obj:`Dataset`, `optional`):
-                Pass a dataset if you wish to override :obj:`self.eval_dataset`. If it is an :obj:`datasets.Dataset`,
-                columns not accepted by the ``model.forward()`` method are automatically removed. It must implement
-                the :obj:`__len__` method.
+            eval_dataset (`Dataset`, *optional*):
+                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns
+                not accepted by the `model.forward()` method are automatically removed. It must implement the `__len__`
+                method.
+            ignore_keys (`List[str]`, *optional*):
+                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
+                gathering predictions.
+            metric_key_prefix (`str`, *optional*, defaults to `"eval"`):
+                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
+                "eval_bleu" if the prefix is "eval" (default)
 
         Returns:
-            A dictionary containing the evaluation loss and the potential metrics computed from the predictions.
+            Return output instead of output.metrics (so there is also logits)
         """
         if eval_dataset is not None and not isinstance(eval_dataset, collections.abc.Sized):
             raise ValueError("eval_dataset must implement __len__")
