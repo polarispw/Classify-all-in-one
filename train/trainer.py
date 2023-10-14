@@ -2,12 +2,14 @@
 The Trainer class, to easily train a 🤗 Transformers from scratch or finetune it on a new task.
 """
 
-import collections
+import collections.abc
 import os
 import time
-from typing import Dict, Optional, List
+from typing import Optional, List
 
 import torch
+import torch.distributed
+import transformers
 from packaging import version
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
@@ -30,8 +32,6 @@ from transformers.trainer_callback import (
 from transformers.trainer_callback import TrainerState
 from transformers.trainer_utils import TrainOutput, EvalLoopOutput
 from transformers.utils import logging
-
-from linearhead_trainer import LinearHeadTrainer
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
@@ -99,7 +99,7 @@ def default_dev_objective(metrics):
     raise Exception("No metric founded for {}".format(metrics))
 
 
-class Trainer(LinearHeadTrainer):
+class Trainer(transformers.Trainer):
     """
     Adding some functions based on Transformers' Trainer class.
     """
@@ -245,7 +245,6 @@ class Trainer(LinearHeadTrainer):
         self.state = TrainerState()
         self.state.global_step = 0
         start_time = time.time()
-        self.state.zo_forward_step = 0
         self.epoch = 0
         epochs_trained = 0
         steps_trained_in_current_epoch = 0
@@ -280,16 +279,13 @@ class Trainer(LinearHeadTrainer):
             if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
                 train_dataloader.sampler.set_epoch(epoch)
 
-            epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=True)
+            epoch_iterator = tqdm(train_dataloader, desc="Iteration for training", disable=True)
 
             # Reset the past mems state at the beginning of each epoch if necessary.
             if self.args.past_index >= 0:
                 self._past = None
 
             for step, inputs in enumerate(epoch_iterator):
-                if self.args.sync_embedding_layers:
-                    assert model.module.model_type == 'opt', 'did not implement embedding layer synchronization for non-OPT models'
-                    model.module.model.decoder.embed_tokens.weight = model.module.lm_head.weight
 
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
@@ -303,24 +299,9 @@ class Trainer(LinearHeadTrainer):
                         # last step in epoch but step is always smaller than gradient_accumulation_steps
                         self.args.gradient_accumulation_steps >= len(epoch_iterator) == (step + 1)
                 ):
-                    if self.args.fp16 and _use_native_amp:
-                        self.scaler.unscale_(optimizer)
-                        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
-                    else:
-                        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), self.args.max_grad_norm)
-
-                    if self.args.optimizer_variant == 'signgd':
-                        for n, p in model.named_parameters():
-                            if p.grad is not None:
-                                p.grad = torch.sign(p.grad)
-
-                    if self.args.fp16 and _use_native_amp:
-                        self.scaler.step(optimizer)
-                        self.scaler.update()
-                    else:
-                        optimizer.step()
-
+                    optimizer.step()
                     scheduler.step()
+
                     model.zero_grad()
                     self.state.global_step += 1
                     self.epoch = epoch + (step + 1) / len(epoch_iterator)
@@ -331,7 +312,6 @@ class Trainer(LinearHeadTrainer):
                         logs = {}
                         tr_loss_scalar = tr_loss.item()
                         logs["loss"] = (tr_loss_scalar - logging_loss_scalar) / self.args.logging_steps
-                        logs["norm"] = norm.item()
                         # backward compatibility for pytorch schedulers
                         logs["learning_rate"] = (
                             scheduler.get_last_lr()[0]
@@ -343,8 +323,7 @@ class Trainer(LinearHeadTrainer):
                         self.log(logs)
                         logger.info(str(logs))
 
-                if (0 < self.args.max_steps < self.state.global_step or
-                        (0 < self.args.max_zo_forward_steps < self.state.zo_forward_step)):
+                if 0 < self.args.max_steps < self.state.global_step:
                     epoch_iterator.close()
                     break
 
@@ -359,8 +338,7 @@ class Trainer(LinearHeadTrainer):
                         # Now we save this to (CPU) memory instead of disk <-- much faster
                         self.best_model_ckpt = {k: v.detach().cpu() for k, v in model.state_dict().items()}
 
-            if (0 < self.args.max_steps < self.state.global_step or
-                    (0 < self.args.max_zo_forward_steps < self.state.zo_forward_step)):
+            if 0 < self.args.max_steps < self.state.global_step:
                 # train_iterator.close()
                 break
 

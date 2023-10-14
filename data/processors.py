@@ -1,179 +1,9 @@
 """Dataset utils for different data settings for GLUE."""
 import logging
 import pandas as pd
-from transformers.data.metrics import glue_compute_metrics
 from transformers.data.processors.glue import *
 
-logger = logging.getLogger(__name__)
-
-
-class MrpcProcessor(DataProcessor):
-    """Processor for the MRPC data set (GLUE version)."""
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
-        return InputExample(
-            tensor_dict["idx"].numpy(),
-            tensor_dict["sentence1"].numpy().decode("utf-8"),
-            tensor_dict["sentence2"].numpy().decode("utf-8"),
-            str(tensor_dict["label"].numpy()),
-        )
-
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        logger.info("LOOKING AT {}".format(os.path.join(data_dir, "train.tsv")))
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
-
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
-    def get_test_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
-
-    def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training, dev and test sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, i)
-            text_a = line[3]
-            text_b = line[4]
-            label = line[0]
-            examples.append(InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
-
-
-class MnliProcessor(DataProcessor):
-    """Processor for the MultiNLI data set (GLUE version)."""
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
-        return InputExample(
-            tensor_dict["idx"].numpy(),
-            tensor_dict["premise"].numpy().decode("utf-8"),
-            tensor_dict["hypothesis"].numpy().decode("utf-8"),
-            str(tensor_dict["label"].numpy()),
-        )
-
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
-
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "dev_matched.tsv")), "dev_matched")
-
-    def get_test_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "test_matched.tsv")), "test_matched")
-
-    def get_labels(self):
-        """See base class."""
-        return ["contradiction", "entailment", "neutral"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training, dev and test sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, line[0])
-            text_a = line[8]
-            text_b = line[9]
-            label = line[-1]
-            examples.append(InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
-
-
-class Sst2Processor(DataProcessor):
-    """Processor for the SST-2 data set (GLUE version)."""
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
-        return InputExample(
-            tensor_dict["idx"].numpy(),
-            tensor_dict["sentence"].numpy().decode("utf-8"),
-            None,
-            str(tensor_dict["label"].numpy()),
-        )
-
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
-
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
-    def get_test_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
-
-    def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training, dev and test sets."""
-        examples = []
-        text_index = 0
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, i)
-            text_a = line[text_index]
-            label = line[1]
-            examples.append(InputExample(guid=guid, text_a=text_a, text_b=None, label=label))
-        return examples
-
-
-class StsbProcessor(DataProcessor):
-    """Processor for the STS-B data set (GLUE version)."""
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
-        return InputExample(
-            tensor_dict["idx"].numpy(),
-            tensor_dict["sentence1"].numpy().decode("utf-8"),
-            tensor_dict["sentence2"].numpy().decode("utf-8"),
-            str(tensor_dict["label"].numpy()),
-        )
-
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
-
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-
-    def get_test_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
-
-    def get_labels(self):
-        """See base class."""
-        return [None]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training, dev and test sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, line[0])
-            text_a = line[7]
-            text_b = line[8]
-            label = line[-1]
-            examples.append(InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
+logger = logging.get_logger(__name__)
 
 
 class TextClassificationProcessor(DataProcessor):
@@ -256,16 +86,6 @@ def text_classification_metrics(task_name, preds, labels):
 # Add your task to the following mappings
 
 processors_mapping = {
-    "cola": ColaProcessor(),
-    "mnli": MnliProcessor(),
-    "mnli-mm": MnliMismatchedProcessor(),
-    "mrpc": MrpcProcessor(),
-    "sst-2": Sst2Processor(),
-    "sts-b": StsbProcessor(),
-    "qqp": QqpProcessor(),
-    "qnli": QnliProcessor(),
-    "rte": RteProcessor(),
-    "wnli": WnliProcessor(),
     "mr": TextClassificationProcessor("mr"),
     "sst-5": TextClassificationProcessor("sst-5"),
     "subj": TextClassificationProcessor("subj"),
@@ -275,16 +95,6 @@ processors_mapping = {
 }
 
 num_labels_mapping = {
-    "cola": 2,
-    "mnli": 3,
-    "mrpc": 2,
-    "sst-2": 2,
-    "sts-b": 1,
-    "qqp": 2,
-    "qnli": 2,
-    "rte": 2,
-    "wnli": 2,
-    "snli": 3,
     "mr": 2,
     "sst-5": 5,
     "subj": 2,
@@ -294,17 +104,6 @@ num_labels_mapping = {
 }
 
 output_modes_mapping = {
-    "cola": "classification",
-    "mnli": "classification",
-    "mnli-mm": "classification",
-    "mrpc": "classification",
-    "sst-2": "classification",
-    "sts-b": "regression",
-    "qqp": "classification",
-    "qnli": "classification",
-    "rte": "classification",
-    "wnli": "classification",
-    "snli": "classification",
     "mr": "classification",
     "sst-5": "classification",
     "subj": "classification",
@@ -315,30 +114,10 @@ output_modes_mapping = {
 
 # Return a function that takes (task_name, preds, labels) as inputs
 compute_metrics_mapping = {
-    "cola": glue_compute_metrics,
-    "mnli": glue_compute_metrics,
-    "mnli-mm": glue_compute_metrics,
-    "mrpc": glue_compute_metrics,
-    "sst-2": glue_compute_metrics,
-    "sts-b": glue_compute_metrics,
-    "qqp": glue_compute_metrics,
-    "qnli": glue_compute_metrics,
-    "rte": glue_compute_metrics,
-    "wnli": glue_compute_metrics,
-    "snli": text_classification_metrics,
     "mr": text_classification_metrics,
     "sst-5": text_classification_metrics,
     "subj": text_classification_metrics,
     "trec": text_classification_metrics,
     "cr": text_classification_metrics,
     "mpqa": text_classification_metrics,
-}
-
-# For regression task only: median
-median_mapping = {
-    "sts-b": 2.5
-}
-
-bound_mapping = {
-    "sts-b": (0, 5)
 }

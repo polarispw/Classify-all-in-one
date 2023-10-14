@@ -6,7 +6,6 @@ from typing import Callable, Dict
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from data.dataset import MyDataset, MyDataCollatorWithPadding
 from filelock import FileLock
 from configs.args_list import ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments
@@ -15,7 +14,7 @@ from models.base_model import MODEL_TYPES, resize_token_type_embeddings
 from train.trainer import Trainer
 from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer, EvalPrediction
 from transformers import HfArgumentParser, set_seed
-from data.processors import num_labels_mapping, output_modes_mapping, compute_metrics_mapping, bound_mapping
+from data.processors import num_labels_mapping, output_modes_mapping, compute_metrics_mapping
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -23,7 +22,6 @@ logger.setLevel(logging.INFO)
 
 def main():
     # parse arguments
-
     parser = HfArgumentParser((ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script, and it's the path to a json file,
@@ -50,7 +48,6 @@ def main():
         training_args.do_predict = False
 
     # Setup logging
-
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -79,59 +76,6 @@ def main():
     # Set seed
     set_seed(training_args.seed)
 
-    # Load prompt/template/mapping file
-    if data_args.prompt:
-        if data_args.prompt_path is not None:
-            assert data_args.prompt_id is not None
-            prompt_list = []
-            with open(data_args.prompt_path) as f:
-                for line in f:
-                    line = line.strip()
-                    template, mapping = line.split('\t')
-                    prompt_list.append((template, mapping))
-
-            data_args.template, data_args.mapping = prompt_list[data_args.prompt_id]
-            logger.info(
-                "Specify load the %d-th prompt: %s | %s" % (data_args.prompt_id, data_args.template, data_args.mapping))
-        else:
-            if data_args.template_path is not None:
-                with open(data_args.template_path) as f:
-                    data_args.template_list = []
-                    for line in f:
-                        line = line.strip()
-                        if len(line) > 0:
-                            data_args.template_list.append(line)
-
-                # Load top-n templates
-                if data_args.top_n_template is not None:
-                    data_args.template_list = data_args.template_list[:data_args.top_n_template]
-                logger.info("Load top-%d templates from %s" % (len(data_args.template_list), data_args.template_path))
-
-                # ... or load i-th template
-                if data_args.template_id is not None:
-                    data_args.template = data_args.template_list[data_args.template_id]
-                    data_args.template_list = None
-                    logger.info("Specify load the %d-th template: %s" % (data_args.template_id, data_args.template))
-
-            if data_args.mapping_path is not None:
-                assert data_args.mapping_id is not None  # Only can use one label word mapping
-                with open(data_args.mapping_path) as f:
-                    mapping_list = []
-                    for line in f:
-                        line = line.strip()
-                        mapping_list.append(line)
-
-                data_args.mapping = mapping_list[data_args.mapping_id]
-                logger.info("Specify using the %d-th mapping: %s" % (data_args.mapping_id, data_args.mapping))
-
-    try:
-        num_labels = num_labels_mapping[data_args.task_name]
-        output_mode = output_modes_mapping[data_args.task_name]
-        logger.info(
-            "Task name: {}, number of labels: {}, output mode: {}".format(data_args.task_name, num_labels, output_mode))
-    except KeyError:
-        raise ValueError("Task not found: %s" % (data_args.task_name))
-
     # Create config
     config_kwargs = {'apply_lora': model_args.apply_lora,
                      'lora_alpha': model_args.lora_alpha,
@@ -140,7 +84,6 @@ def main():
         if 'roberta' in model_args.model_name_or_path:
             config = RobertaConfig.from_pretrained(
                 model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-                num_labels=num_labels,
                 finetuning_task=data_args.task_name,
                 cache_dir=model_args.cache_dir,
                 **config_kwargs)
@@ -149,14 +92,13 @@ def main():
     else:
         config = AutoConfig.from_pretrained(
             model_args.config_name if model_args.config_name else model_args.model_name_or_path,
-            num_labels=num_labels,
             finetuning_task=data_args.task_name,
             cache_dir=model_args.cache_dir
         )
 
     if 'prompt' in model_args.few_shot_type:
         model_fn = MODEL_TYPES[config.model_type]
-    elif model_args.few_shot_type == 'finetune':
+    elif "finetune" in model_args.few_shot_type:
         if training_args.from_linearhead:
             model_fn = MODEL_TYPES[config.model_type]
         else:
@@ -210,23 +152,23 @@ def main():
             if head_name not in n:
                 p.requires_grad = False
             else:
-                logger.info(f"Only tuning {n}")
+                logger.info(f"Weights in {n} will be updated\n")
 
     tokenizer.model_type = model.config.model_type
 
-    # Get our special datasets.
+    # Get our special datasets. arg:format = training_args.trainer
     train_dataset = (
-        MyDataset(data_args, tokenizer=tokenizer, mode="train", use_demo=("demo" in model_args.few_shot_type))
+        MyDataset(data_args, tokenizer=tokenizer, mode="train")
         if training_args.do_train
         else None
     )
     eval_dataset = (
-        MyDataset(data_args, tokenizer=tokenizer, mode="dev", use_demo=("demo" in model_args.few_shot_type))
+        MyDataset(data_args, tokenizer=tokenizer, mode="dev")
         if training_args.do_eval
         else None
     )
     test_dataset = (
-        MyDataset(data_args, tokenizer=tokenizer, mode="test", use_demo=("demo" in model_args.few_shot_type))
+        MyDataset(data_args, tokenizer=tokenizer, mode="test")
         if training_args.do_predict
         else None
     )
@@ -236,7 +178,7 @@ def main():
         model.resize_token_embeddings(len(tokenizer))
         resize_token_type_embeddings(model, new_num_types=10, random_segment=model_args.random_segment)
 
-    # Pass dataset and argument information to the model
+    # Pass dataset and arguments to the model
     if eval_dataset.label_word_list is not None:
         model.label_word_list = torch.tensor(eval_dataset.label_word_list).long().to(training_args.device)
     model.model_args = model_args
@@ -278,9 +220,9 @@ def main():
 
     # Initialize Trainer to be used
     trainer_classes = {
-        "standard": Trainer,
+        "standard": Trainer,  # fine-tune on downstream task
+        # "simcse":
         # "prompt":
-        # "in-context":
     }
     trainer_class = trainer_classes[training_args.trainer]
     trainer_kwargs = {}
