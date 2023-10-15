@@ -6,7 +6,7 @@ from typing import Callable, Dict
 
 import numpy as np
 import torch
-from data.dataset import MyDataset, MyDataCollatorWithPadding
+from data.dataset import CLSTaskDataset, MyDataCollatorWithPadding
 from filelock import FileLock
 from configs.args_list import ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments
 from models.modeling_roberta import RobertaConfig
@@ -158,17 +158,17 @@ def main():
 
     # Get our special datasets. arg:format = training_args.trainer
     train_dataset = (
-        MyDataset(data_args, tokenizer=tokenizer, mode="train")
+        CLSTaskDataset(data_args, tokenizer=tokenizer, mode="train")
         if training_args.do_train
         else None
     )
     eval_dataset = (
-        MyDataset(data_args, tokenizer=tokenizer, mode="dev")
+        CLSTaskDataset(data_args, tokenizer=tokenizer, mode="dev")
         if training_args.do_eval
         else None
     )
     test_dataset = (
-        MyDataset(data_args, tokenizer=tokenizer, mode="test")
+        CLSTaskDataset(data_args, tokenizer=tokenizer, mode="test")
         if training_args.do_predict
         else None
     )
