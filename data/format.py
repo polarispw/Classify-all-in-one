@@ -148,12 +148,12 @@ def random_divide_dataset(data_desc, ratio=None):
     dev_file = data_dir.rsplit('.', 1)[0] + '_dev.json'
     test_file = data_dir.rsplit('.', 1)[0] + '_test.json'
     print(train_file, dev_file, test_file)
-    with open(train_file, 'w', encoding='utf-8') as f:
-        json.dump(train_data, f, ensure_ascii=False)
-    with open(dev_file, 'w', encoding='utf-8') as f:
-        json.dump(dev_data, f, ensure_ascii=False)
-    with open(test_file, 'w', encoding='utf-8') as f:
-        json.dump(test_data, f, ensure_ascii=False)
+    with open(train_file, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(train_data, f, ensure_ascii=False, indent=4)
+    with open(dev_file, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(dev_data, f, ensure_ascii=False, indent=4)
+    with open(test_file, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(test_data, f, ensure_ascii=False, indent=4)
     print(f"finish writing in {data_dir.rsplit('.', 1)[0]}")
     return train_data, dev_data, test_data
 

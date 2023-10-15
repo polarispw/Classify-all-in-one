@@ -10,28 +10,11 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 from transformers.data.processors.utils import InputFeatures
 
-from data.processors import processors_mapping
+from format import datasets_mapping, load_datasets_from_json
+from processors import processors_mapping
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-@dataclass(frozen=True)
-class CLSInputFeatures(InputFeatures):
-    """
-    Inherit from Transformers' InputFeatuers.
-    """
-
-    input_ids: List[int]
-    attention_mask: Optional[List[int]] = None
-    token_type_ids: Optional[List[int]] = None
-    label: Optional[Union[int, float]] = None
-    mask_pos: Optional[List[int]] = None  # Position of the mask token
-    label_word_list: Optional[List[int]] = None  # Label word mapping (dynamic), for prompting
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(dataclasses.asdict(self)) + "\n"
 
 
 @dataclass
@@ -98,23 +81,31 @@ class MyDataCollatorWithPadding:
         return batch
 
 
+@dataclass(frozen=True)
+class CLSInputFeatures(InputFeatures):
+    """
+    Inherit from Transformers' InputFeatuers.
+    """
+    input_ids: List[int]
+    attention_mask: Optional[List[int]] = None
+    token_type_ids: Optional[List[int]] = None
+    label: Optional[Union[int, float]] = None
+
+    def to_json_string(self):
+        """Serializes this instance to a JSON string."""
+        return json.dumps(dataclasses.asdict(self)) + "\n"
+
+
 def tokenize_multipart_input(
-        input_text_list,
+        input_data,
         max_length,
         tokenizer,
-        task_name=None,
-        prompt=False,
-        template=None,
-        label_word_list=None,
-        first_sent_limit=None,
-        other_sent_limit=None,
-        gpt3=False,
         truncate_head=False,
-        support_labels=None,
 ):
     def enc(text):
         return tokenizer.encode(text, add_special_tokens=False)
 
+    input_text_list = input_data['texts']
     input_ids = []
     attention_mask = []
     token_type_ids = []  # Only for BERT
@@ -158,24 +149,10 @@ def tokenize_multipart_input(
             attention_mask = attention_mask[:max_length]
             token_type_ids = token_type_ids[:max_length]
 
-    # Find mask token
-    if prompt and tokenizer.mask_token_id is not None:
-        # Make sure that the masked position is inside the max_length
-        assert tokenizer.mask_token_id in input_ids, \
-            "Mask token not found for input: {} {}".format(input_text_list, input_ids)
-        mask_pos = [input_ids.index(tokenizer.mask_token_id)]
-        assert mask_pos[0] < max_length
-    elif prompt and tokenizer.mask_token_id is None:
-        # autoregressive model
-        mask_pos = [len(input_ids) - 1]
-
-    result = {'input_ids': input_ids, 'attention_mask': attention_mask}
+    result = {'input_ids': input_ids, 'attention_mask': attention_mask, 'label': input_data['labels']}
     if 'BERT' in type(tokenizer).__name__:
         # Only provide token type ids for BERT
         result['token_type_ids'] = token_type_ids
-
-    if prompt:
-        result['mask_pos'] = mask_pos
 
     return result
 
@@ -184,74 +161,57 @@ class CLSTaskDataset(Dataset):
     """
     This is a dataset for CLS task
     """
-
-    def __init__(self, args, tokenizer, mode: Optional[str] = "train"):
+    def __init__(self, args, tokenizer, mode:str = "train"):
         self.args = args
-        self.size = None
         self.mode = mode
 
         self.task_name = args.task_name
+        self.data_desc = datasets_mapping[args.task_name]
 
         self.tokenizer = tokenizer
         self.processor = processors_mapping[args.task_name]
 
         # Get label list and (for prompt) label word list
-        self.label_list = self.processor.get_labels()
+        if mode == "train":
+            self.data_list, _, _ = load_datasets_from_json(self.data_desc)
+        elif mode == "dev":
+            _, self.data_list, _ = load_datasets_from_json(self.data_desc)
+        elif mode == "test":
+            _, _, self.data_list = load_datasets_from_json(self.data_desc)
+        self.label_list = self.data_desc.label_list
         self.num_labels = len(self.label_list)
 
     def __getitem__(self, i):
-        features = self.convert_fn(
-            label_list=self.label_list,
-            prompt=self.args.prompt,
-            verbose=False,
+        """
+        Returns a list of processed "InputFeatures".
+        """
+        # Prepare features
+        inputs = tokenize_multipart_input(
+            input_data=self.data_list[i],
+            max_length=self.args.max_length,
+            tokenizer=self.tokenizer,
+            truncate_head=False,
         )
-
+        features = CLSInputFeatures(**inputs)
         return features
 
     def __len__(self):
-        return self.size
+        return len(self.data_list)
 
     def get_labels(self):
         return self.label_list
 
-    def convert_fn(
-            self,
-            example,
-            supports,
-            use_demo=False,
-            label_list=None,
-            prompt=False,
-            template=None,
-            sfc_template=None,
-            label_word_list=None,
-            verbose=False
-    ):
-        """
-        Returns a list of processed "InputFeatures".
-        """
-        max_length = self.args.max_seq_length
 
-        # Prepare labels
-        label_map = {label: i for i, label in enumerate(label_list)}  # Mapping the label names to label ids
+if __name__ == "__main__":
+    from transformers import AutoTokenizer
+    from configs.args_list import ModelArguments
 
-        # Prepare other features
-        inputs = tokenize_multipart_input(
-            input_text_list=example,
-            max_length=max_length,
-            tokenizer=self.tokenizer,
-            task_name=self.args.task_name,
-            prompt=prompt,
-            template=template,
-            label_word_list=label_word_list,
-            first_sent_limit=self.args.first_sent_limit,
-            other_sent_limit=self.args.other_sent_limit,
-        )
-        features = CLSInputFeatures(**inputs)
-
-        if verbose:
-            logger.info("*** Example ***")
-            logger.info("guid: %s" % example.guid)
-            logger.info("features: %s" % features)
-            logger.info("text: %s" % self.tokenizer.decode(features.input_ids))
-
-        return features
+    test_args = ModelArguments("./")
+    test_args.task_name = "llm"
+    test_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    dataset = CLSTaskDataset(args=test_args, tokenizer=test_tokenizer, mode="train")
+    print(dataset[0])
+    print(dataset[1])
+    print(dataset[2])
+    print(dataset[3])
+    print(dataset[4])

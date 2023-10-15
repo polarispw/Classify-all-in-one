@@ -88,6 +88,7 @@ def text_classification_metrics(task_name, preds, labels):
 processors_mapping = {
     "mr": TextClassificationProcessor("mr"),
     "sst-5": TextClassificationProcessor("sst-5"),
+    "llm": TextClassificationProcessor("sst-5"),
     "subj": TextClassificationProcessor("subj"),
     "trec": TextClassificationProcessor("trec"),
     "cr": TextClassificationProcessor("cr"),

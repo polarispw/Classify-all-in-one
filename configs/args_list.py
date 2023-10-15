@@ -22,6 +22,14 @@ class ModelArguments:
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from HF"}
     )
+    max_length: Optional[int] = field(
+        default=512,
+        metadata={"help": "Max input length"}
+    )
+    task_name: str = field(
+        default=None,
+        metadata={"help": "Task name: detector, nlp, llm"}
+    )
 
     # Few-shot type
     #   - finetune: standard fine-tuning
