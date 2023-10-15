@@ -33,7 +33,7 @@ def gpt_35_api_stream(messages: list):
                 print(f'收到的完成数据: {completion}')
                 break
             for delta_k, delta_v in event['choices'][0]['delta'].items():
-                print(f'流响应数据: {delta_k} = {delta_v}')
+                # print(f'流响应数据: {delta_k} = {delta_v}')
                 completion[delta_k] += delta_v
         messages.append(completion)  # 直接在传入参数 messages 中追加消息
         return True, ''
@@ -42,6 +42,6 @@ def gpt_35_api_stream(messages: list):
 
 
 if __name__ == '__main__':
-    message = [{'role': 'user', 'content': '鲁迅和周树人的关系'}, ]
+    message = [{'role': 'user', 'content': 'rewrite the following sentence: I’m loving it! We should learn from this app.'}, ]
     print(gpt_35_api_stream(message))
     print(message)

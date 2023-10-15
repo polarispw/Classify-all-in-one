@@ -6,20 +6,21 @@ import json
 import pandas as pd
 from dataclasses import dataclass
 
+
 @dataclass
 class DatasetDescription:
     """
     This class is used to describe the dataset.
     """
     task_name: str
-    data_dir: str
+    data_dir: str  # raw file of the dataset, if your dataset is well formatted, you can leave it None
     train_file: str
     dev_file: str
     test_file: str
     header: bool
     label_list: list
-    text_columns: list # if in .json, text_colums should be keys
-    label_columns: list # if in .json, label_colums should be str(label)
+    text_columns: list  # if in .json, text_colums should be keys
+    label_columns: list  # if in .json, label_colums should be str(label)
     train_sample_num: int
     dev_sample_num: int
     test_sample_num: int
@@ -41,11 +42,11 @@ datasets_mapping = {
         test_sample_num=2665,
     ),
     "llm": DatasetDescription(
-        task_name="sst-5",
-        data_dir="../data_lib/chatgpt_reviews.csv",
-        train_file="../data_lib/chatgpt_reviews_train.json",
-        dev_file="../data_lib/chatgpt_reviews_dev.json",
-        test_file="../data_lib/chatgpt_reviews_test.json",
+        task_name="chatgpt_review",
+        data_dir="../data_lib/chatgpt_review/chatgpt_reviews.csv",
+        train_file="../data_lib/chatgpt_review/chatgpt_reviews_train.json",
+        dev_file="../data_lib/chatgpt_review/chatgpt_reviews_dev.json",
+        test_file="../data_lib/chatgpt_review/chatgpt_reviews_test.json",
         header=True,
         label_list=["1", "2", "3", "4", "5"],
         text_columns=[1, 2],
@@ -81,6 +82,7 @@ def load_data_from_rawfile(data_desc: DatasetDescription):
     """
     data = []
     data_dir = data_desc.data_dir
+    assert data_dir is not None, "data_dir is None, please check your data description."
     file_format = data_dir.split('.')[-1]
     if file_format == 'csv':
         data_file = pd.read_csv(data_dir, header=None).values.tolist()
@@ -141,13 +143,12 @@ def random_divide_dataset(data_desc, ratio=None):
     train_data = data[:train_sample_num]
     dev_data = data[train_sample_num:train_sample_num + dev_sample_num]
     test_data = data[train_sample_num + dev_sample_num:train_sample_num + dev_sample_num + test_sample_num]
-    print(len(data))
     # Save data as json files
     data_dir = data_desc.data_dir
     train_file = data_dir.rsplit('.', 1)[0] + '_train.json'
     dev_file = data_dir.rsplit('.', 1)[0] + '_dev.json'
     test_file = data_dir.rsplit('.', 1)[0] + '_test.json'
-    print(train_file, dev_file, test_file)
+
     with open(train_file, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(train_data, f, ensure_ascii=False, indent=4)
     with open(dev_file, 'w', encoding='utf-8', newline='\n') as f:

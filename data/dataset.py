@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import List, Optional, Union
 
 import pandas as pd
-import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 from transformers.data.processors.utils import InputFeatures
@@ -137,7 +136,7 @@ class CLSTaskDataset(Dataset):
     """
     This is a dataset for CLS task
     """
-    def __init__(self, args, tokenizer, mode:str = "train"):
+    def __init__(self, args, tokenizer, mode: str = "train"):
         self.args = args
         self.mode = mode
 
