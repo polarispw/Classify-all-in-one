@@ -130,6 +130,7 @@ def main():
             device_map='auto',
             torch_dtype=torch.float16 if training_args.efficient_zero_order_fp16 else torch.float32,
             max_memory=max_memory,
+            requires_grad=False,
         )
     else:
         model = model_fn.from_pretrained(
@@ -137,22 +138,22 @@ def main():
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
             cache_dir=model_args.cache_dir,
+            requires_grad=False,
         )
 
     if training_args.random_model_init:
         model.init_weights()  # reinit weights to random
 
-    if training_args.head_tuning:
-        if model.config.model_type == "roberta":
-            head_name = "lm_head"
-        else:
-            head_name = "###"
-
+    if training_args.update_layers == -1:
+        model.requires_grad_(True)
+    elif training_args.update_layers == 0:
         for n, p in model.named_parameters():
-            if head_name not in n:
-                p.requires_grad = False
-            else:
-                logger.info(f"Weights in {n} will be updated\n")
+            if 'embeddings' not in n:
+                p.requires_grad_(True)
+    else:
+        for n, p in model.named_parameters():
+            if int(n[n.find('encoder.layer') + 14:].split('.')[0]) >= training_args.update_layers:
+                p.requires_grad_(True)
 
     tokenizer.model_type = model.config.model_type
 
@@ -220,8 +221,7 @@ def main():
 
     # Initialize Trainer to be used
     trainer_classes = {
-        "standard": Trainer,  # fine-tune on downstream task
-        # "simcse":
+        "standard": Trainer,  # fine-tune on downstream task, further pret-rain on my dataset
         # "prompt":
     }
     trainer_class = trainer_classes[training_args.trainer]

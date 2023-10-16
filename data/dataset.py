@@ -191,4 +191,4 @@ if __name__ == "__main__":
     data_list = []
     for i in range(8):
         data_list.append(dataset[i])
-    print(data_collator.__call__(data_list)['labels'])
+    print(data_collator.__call__(data_list)["input_ids"])

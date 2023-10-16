@@ -5,7 +5,7 @@ The Trainer class, to easily train a 🤗 Transformers from scratch or finetune 
 import collections.abc
 import os
 import time
-from typing import Optional, List
+from typing import Optional, List, Union, Dict, Callable, Tuple
 
 import torch
 import torch.distributed
@@ -16,6 +16,13 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
+from transformers import (
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
+    DataCollator,
+    EvalPrediction,
+    TrainerCallback,
+    TrainingArguments)
 from transformers.file_utils import is_datasets_available
 from transformers.integrations import (
     is_comet_available,
@@ -75,7 +82,7 @@ logger = logging.get_logger(__name__)
 logger.setLevel(logging.INFO)
 
 """ 
-The above part is copied from Transformers trainer (3.4.0)
+The above part is copied from MeZO
 """
 
 
@@ -104,99 +111,58 @@ class Trainer(transformers.Trainer):
     Adding some functions based on Transformers' Trainer class.
     """
 
-    def create_optimizer_and_scheduler(self, num_training_steps: int):
-        """
-        Based on Transformers' default one, we add fixing layer option where the bottom n layers' parameters
-        are fixed and only the top layers will be fine-tuned.
-        """
-        if self.args.hf_inference_model:
-            return
+    def __init__(
+            self,
+            model: Union[PreTrainedModel, torch.nn.Module] = None,
+            args: TrainingArguments = None,
+            data_collator: Optional[DataCollator] = None,
+            train_dataset: Optional[Dataset] = None,
+            eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
+            tokenizer: Optional[PreTrainedTokenizerBase] = None,
+            model_init: Optional[Callable[[], PreTrainedModel]] = None,
+            compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
+            callbacks: Optional[List[TrainerCallback]] = None,
+            optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
+            preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+    ):
+        super().__init__(model, args, data_collator, train_dataset, eval_dataset, tokenizer, model_init,
+                         compute_metrics, callbacks, optimizers, preprocess_logits_for_metrics)
+        self._past = None
+        self.dev_objective = None
+        self.best_dir = None
 
-        if self.optimizer is None:
-            params = {}
-            for n, p in self.model.named_parameters():
-                if self.args.fix_layers > 0:
-                    if 'encoder.layer' in n:
-                        try:
-                            layer_num = int(n[n.find('encoder.layer') + 14:].split('.')[0])
-                        except ValueError:
-                            raise ValueError(f"Unexpected error when going through {n}, check its name")
-
-                        if layer_num >= self.args.fix_layers:
-                            print('yes', n)
-                            params[n] = p
-                        else:
-                            print('no ', n)
-
-                    elif 'embeddings' in n:
-                        print('no ', n)
-                    else:
-                        print('yes', n)
-                        params[n] = p
-                else:
-                    params[n] = p
-            no_decay = ["bias", "LayerNorm.weight"]
-            optimizer_grouped_parameters = [
-                {
-                    "params": [p for n, p in params.items() if not any(nd in n for nd in no_decay)],
-                    "weight_decay": self.args.weight_decay,
-                },
-                {
-                    "params": [p for n, p in params.items() if any(nd in n for nd in no_decay)],
-                    "weight_decay": 0.0,
-                },
-            ]
-            if self.args.optimizer == 'adam':
-                self.optimizer = AdamW(
-                    optimizer_grouped_parameters,
-                    lr=self.args.learning_rate,
-                    betas=(self.args.adam_beta1, self.args.adam_beta2),
-                    eps=self.args.adam_epsilon,
-                )
-            elif self.args.optimizer == 'sgd':
-                self.optimizer = SGD(
-                    optimizer_grouped_parameters,
-                    lr=self.args.learning_rate
-                )
-            else:
-                raise NotImplementedError
-
-        if self.lr_scheduler is None:
-            self.lr_scheduler = get_scheduler(
-                self.args.lr_scheduler_type,
-                optimizer=self.optimizer,
-                num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-                num_training_steps=num_training_steps,
-            )
-
-    def train(self, model_path=None, dev_objective=None):
+    def train(self, model_path=None, dev_objective=None, **kwargs):
         """
         Main training entry point.
 
         The training logic is directly borrowed from transformers.Trainer (version 3.0.2).
         Add early stopping.
+        :param dev_objective:
+        :param model_path:
         """
-        if self.args.from_linearhead and model_path is None:
-            super().train(model_path, dev_objective)  # Train output layer using LinearHeadTrainer
-
         self.best_dir = None
         self.objective = -float("inf")
         self.dev_objective = dev_objective if dev_objective is not None else default_dev_objective
 
-        # Data loading.
+        """ Prepare dataloader and hyperparameters for update steps"""
+        # return a DataLoader using self.train_dataset and self.data_collator
         train_dataloader = self.get_train_dataloader()
+
+        # calculate update steps to do in one epoch
         num_update_steps_per_epoch = len(train_dataloader) // self.args.gradient_accumulation_steps
         if num_update_steps_per_epoch == 0:
             num_update_steps_per_epoch = 1
+
+        # calculate the total number of epochs to train, based on args.max_steps or args.num_train_epochs
         if self.args.max_steps > 0:
             t_total = self.args.max_steps
-            num_train_epochs = self.args.max_steps // num_update_steps_per_epoch + int(
-                self.args.max_steps % num_update_steps_per_epoch > 0
-            )
+            num_train_epochs = (self.args.max_steps // num_update_steps_per_epoch +
+                                int(self.args.max_steps % num_update_steps_per_epoch > 0))
         else:
             t_total = int(len(train_dataloader) // self.args.gradient_accumulation_steps * self.args.num_train_epochs)
             num_train_epochs = self.args.num_train_epochs
 
+        """ Prepare optimizer and schedule (linear warmup and decay) """
         self.create_optimizer_and_scheduler(num_training_steps=t_total)
         optimizer = self.optimizer
         scheduler = self.lr_scheduler
@@ -213,6 +179,7 @@ class Trainer(transformers.Trainer):
             )
             scheduler.load_state_dict(torch.load(os.path.join(model_path, "scheduler.pt")))
 
+        """ Get model prepared for training """
         model = self.model
 
         # Multi-gpu training (should be after apex fp16 initialization)
@@ -228,7 +195,7 @@ class Trainer(transformers.Trainer):
                 find_unused_parameters=True,
             )
 
-        # Train
+        """ Start training """
         total_train_batch_size = (
                 self.args.train_batch_size
                 * self.args.gradient_accumulation_steps
@@ -273,7 +240,7 @@ class Trainer(transformers.Trainer):
 
         tr_loss = torch.tensor(0.0).to(self.args.device)
         logging_loss_scalar = 0.0
-        model.zero_grad()
+        
         metrics = None
         for epoch in range(epochs_trained, int(num_train_epochs)):
             if isinstance(train_dataloader, DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
@@ -348,6 +315,67 @@ class Trainer(transformers.Trainer):
 
         logger.info("\n\nTraining completed!)\n\n")
         return TrainOutput(self.state.global_step, tr_loss / self.state.global_step, metrics), self.objective
+
+    def create_optimizer_and_scheduler(self, num_training_steps: int):
+        """
+        Based on Transformers' default one, we add fixing layer option
+        where the bottom n layers' parameters will not be fine-tuned.
+        """
+        # no need when doing inference
+        if self.args.hf_inference_model:
+            return
+
+        # No existing optimizer, create the optimizer
+        if self.optimizer is None:
+
+            no_decay = ["bias", "LayerNorm.weight"]
+            optimizer_grouped_parameters = []
+
+            # layer wise lr: calculate the lr_factor for each layer
+            num_layer = self.model.config.num_hidden_layers
+            base_factor = 1.0
+            lr_factor_list = []
+            for i in range(num_layer):
+                lr_factor_list.append(base_factor)
+                base_factor *= self.args.lr_layer_decay_rate
+            lr_factor_list = lr_factor_list[::-1]
+
+            # group the parameters
+            for n, p in self.model.named_parameters():
+                layer_num = int(n[n.find('encoder.layer') + 14:].split('.')[0])
+                weight_norm = not any(nd in n for nd in no_decay) and not ('embeddings' in n)
+                if p.requires_grad:
+                    optimizer_grouped_parameters.append(
+                        {
+                            "params": [p],
+                            "weight_decay": self.args.weight_decay if weight_norm else 0.0,
+                            "lr": self.args.learning_rate * lr_factor_list[layer_num],
+                        }
+                    )
+
+            if self.args.optimizer == 'adam':
+                self.optimizer = AdamW(
+                    optimizer_grouped_parameters,
+                    lr=self.args.learning_rate,
+                    betas=(self.args.adam_beta1, self.args.adam_beta2),
+                    eps=self.args.adam_epsilon,
+                )
+            elif self.args.optimizer == 'sgd':
+                self.optimizer = SGD(
+                    optimizer_grouped_parameters,
+                    lr=self.args.learning_rate
+                )
+            else:
+                raise NotImplementedError
+
+        # No existing scheduler, create the scheduler
+        if self.lr_scheduler is None:
+            self.lr_scheduler = get_scheduler(
+                self.args.lr_scheduler_type,
+                optimizer=self.optimizer,
+                num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                num_training_steps=num_training_steps,
+            )
 
     def evaluate(self,
                  eval_dataset: Optional[Dataset] = None,

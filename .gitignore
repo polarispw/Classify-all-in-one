@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 **/.idea/
 data_lib/
+model_cache/
 # C extensions
 *.so
 *.csv

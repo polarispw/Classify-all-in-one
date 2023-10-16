@@ -254,15 +254,19 @@ class DynamicTrainingArguments(TrainingArguments):
     )
 
     # Regularization
-    fix_layers: int = field(
-        default=0,
-        metadata={"help": "Fix bottom-n layers when optimizing"}
+    update_layers: int = field(
+        default=-1,
+        metadata={"help": "layers to be updated, 0 means embedding layer, -1 means all layers"}
     )
 
     # Training
     save_at_last: bool = field(
         default=False,
         metadata={"help": "Instead of saving the best (dev performance) checkpoint, save the last checkpoint"}
+    )
+    gradient_accumulation_steps: int = field(
+        default=1,
+        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."}
     )
 
     # Turn off train/test
@@ -324,10 +328,29 @@ class DynamicTrainingArguments(TrainingArguments):
         metadata={'help': 'Optimize layer-by-layer (only for prefix + ZO)'}
     )
 
-    max_zo_forward_steps: int = field(
+    max_steps: int = field(
         default=0,
-        metadata={
-            'help': 'Stop at this number of ZO forward steps. The trainer will take whichever is reached first, max_steps or max_zo_forward_steps.'}
+        metadata={'help': 'Stop at this number of forward steps.'}
+    )
+
+    num_train_epochs: int = field(
+        default=10,
+        metadata={'help': 'Number of training epochs，If max_steps is set, this will be ignored.'}
+    )
+
+    learning_rate: int = field(
+        default=1e-5,
+        metadata={'help': 'Learning rate'}
+    )
+
+    lr_scheduler_type: str = field(
+        default='linear',
+        metadata={'help': 'Learning rate scheduler type'}
+    )
+
+    lr_layer_decay_rate: float = field(
+        default=1.0,
+        metadata={'help': 'Learning rate layer decay rate for layer-wise optimizer'}
     )
 
     optimize_acc: bool = field(

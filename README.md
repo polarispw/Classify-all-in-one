@@ -7,7 +7,7 @@
 - support various models: encoders, decoders, seq2seq
 - support functions like full parameter training, fine-tuning, p-tuning
 - customize the structure of model, invisible to higher levels like data processor or trainer
-- customize metrics like contrastive learning
+- support various metrics
 - customize lr scheduler, optimizer,
 - convenient data loader for text in json files
 - easily run with config.json and CLI
