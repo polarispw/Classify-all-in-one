@@ -1,53 +1,44 @@
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Union
 
-from transformers import GlueDataTrainingArguments as DataTrainingArguments
-from transformers import TrainingArguments
+from transformers import TrainingArguments, SchedulerType, IntervalStrategy
+from transformers.trainer_utils import ShardedDDPOption
+from transformers.training_args import OptimizerNames
+from transformers.utils import ExplicitEnum
+
+
+class TaskNameList(ExplicitEnum):
+    """
+    List of available tasks.
+    """
+    LLM = "llm"
+    NLP = "nlp"
+    DETECTOR = "detector"
 
 
 @dataclass
-class ModelArguments:
+class CLSModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
-    model_name_or_path: str = field(
+    name_or_path: str = field(
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
-    tokenizer_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
-    )
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from HF"}
     )
-    max_length: Optional[int] = field(
+    problem_type: Optional[str] = field(
+        default=None, metadata={"help": "The type of the problem: one of `[single, multi]_label_classification`, `regression`"}
+    )
+    num_labels: Optional[int] = field(
+        default=2, metadata={"help": "Number of labels to use in the last layer of the model."}
+    )
+    max_seq_length: Optional[int] = field(
         default=512,
         metadata={"help": "Max input length"}
-    )
-    task_name: str = field(
-        default=None,
-        metadata={"help": "Task name: detector, nlp, llm"}
-    )
-
-    # Few-shot type
-    #   - finetune: standard fine-tuning
-    #   - prompt: prompt-based fine-tuning
-    #   - prompt-demo: prompt-based fine-tuning with demonstrations, in-context learning
-    few_shot_type: str = field(
-        default='finetune',
-        metadata={"help": "Few-shot learning model type. Choice: finetune, prompt, prompt-demo"}
-    )
-
-    # Only for BERT-type model
-    random_segment: bool = field(
-        default=False,
-        metadata={"help": "Whether to reinitialize the token type embeddings (only for BERT)."}
-    )
-    l2_loss: bool = field(
-        default=False,
-        metadata={"help": "Whether to use L2 loss (only makes a difference in standard FT)."}
     )
 
     # LoRA arguments: only for BERT-type model
@@ -64,302 +55,185 @@ class ModelArguments:
         metadata={'help': 'inner rank for lora matrices'}
     )
 
-    # Calibration
-    sfc: bool = field(
-        default=False,
-        metadata={"help": "Whether to use surface form calibration."}
-    )
-
-    icl_sfc: bool = field(
-        default=False,
-        metadata={"help": "Use in-context learning demos in sfc."}
-    )
-
 
 @dataclass
-class DynamicDataTrainingArguments(DataTrainingArguments):
+class CLSTrainingArguments(TrainingArguments):
     """
-    Arguments for dynamic training.
+    Inherit from TrainingArguments, contains arguments usually used in CLS tasks.
+
+    Using [`HfArgumentParser`] we can turn this class into
+    [argparse](https://docs.python.org/3/library/argparse#module-argparse) arguments that can be specified on the
+    command line.
     """
-    num_k: Optional[int] = field(
-        default=16,
-        metadata={"help": "Number of training instances per class"}
-    )
 
-    num_sample: Optional[int] = field(
-        default=16,
-        metadata={"help": "Number of samples (for inference) in fine-tuning with demonstrations"}
+    framework = "pt"
+    task_name: Union[TaskNameList, str] = field(
+        default="llm",
+        metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
-
-    num_demo: Optional[int] = field(
-        default=1,
-        metadata={"help": "Number of demonstrations from each class"}
+    output_dir: str = field(
+        metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
-
-    # For prompting
-    sfc_prompt: str = field(
-        default=None,
-        metadata={"help": "SFC prompt"}
-    )
-    template: str = field(
-        default=None,
-        metadata={"help": "Template"}
-    )
-    mapping: str = field(
-        default=None,
-        metadata={"help": "Label word mapping"}
-    )
-    template_path: str = field(
-        default=None,
+    overwrite_output_dir: bool = field(
+        default=False,
         metadata={
-            "help": "Path to a txt file that stores all the templates, one per line. Do not set this when prompt_path is used"}
-    )
-    mapping_path: str = field(
-        default=None,
-        metadata={
-            "help": "Path to a txt file that stores all the label word mappings, one per line. Do not set this when prompt_path is used"}
-    )
-    prompt_path: str = field(
-        default=None,
-        metadata={"help": "Path to a txt file that stores all the prompts (templates and mappings), one per line"}
-    )
-    template_id: int = field(
-        default=None,
-        metadata={"help": "Template id if using template_path"}
-    )
-    mapping_id: int = field(
-        default=None,
-        metadata={"help": "Mapping id if using template_path"}
-    )
-    prompt_id: int = field(
-        default=None,
-        metadata={"help": "Prompt id if using prompt_path"}
-    )
-    top_n_template: int = field(
-        default=None,
-        metadata={"help": "Use top-n template in the template path"}
+            "help": (
+                "Overwrite the content of the output directory. "
+                "Use this to continue training if output_dir points to a checkpoint directory."
+            )
+        },
     )
 
-    # For logging
-    tag: str = field(
-        default='',
-        metadata={"help": "Set the tag and find the result easier in the log."}
+    do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
+    do_eval: bool = field(default=False, metadata={"help": "Whether to run eval on the dev set."})
+    do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
+
+    per_device_train_batch_size: int = field(
+        default=8, metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for training."}
+    )
+    per_device_eval_batch_size: int = field(
+        default=8, metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for evaluation."}
     )
 
-    # For filtering when using demonstrations
-    demo_filter: bool = field(
-        default=False,
-        metadata={"help": "Only use similar instances in demonstrations"}
-    )
-
-    demo_filter_rate: float = field(
-        default=0.5,
-        metadata={"help": "Only use top-x\% similar instances in demonstrations"}
-    )
-
-    demo_filter_model: str = field(
-        default=None,
-        metadata={
-            "help": "Model name for demonstration filter embeddings. Will load embeddings based on the model name."}
-    )
-
-    debug_mode: bool = field(
-        default=False,
-        metadata={"help": "Debug mode"}
-    )
-
-    # For max length
-    double_demo: bool = field(
-        default=False,
-        metadata={"help": "Use double length for using demonstrations"}
-    )
-
-    first_sent_limit: int = field(
-        default=None,
-        metadata={"help": "Limit the length of the first sentence (i.e., sent_0)"}
-    )
-
-    other_sent_limit: int = field(
-        default=None,
-        metadata={"help": "Limit the length of sentences other than the first sentence"}
-    )
-
-    use_full_length: bool = field(
-        default=None,
-        metadata={"help": "Use the full length (512)"}
-    )
-
-    # GPT-3's in-context learning
-    gpt3_in_context_head: bool = field(
-        default=False,
-        metadata={"help": "GPT-3's in-context learning (context at the beginning)"}
-    )
-    gpt3_in_context_tail: bool = field(
-        default=False,
-        metadata={"help": "GPT-3's in-context learning (context at the end)"}
-    )
-    gpt3_in_context_num: int = field(
-        default=32,
-        metadata={"help": "Number of context examples"}
-    )
-    gpt3_demo_separator: str = field(
-        default="\n\n\n",
-        metadata={"help": "Separator between demonstrations"}
-    )
-    truncate_head: bool = field(
-        default=False,
-        metadata={"help": "When exceeding the maximum length, truncate the head instead of the tail."}
-    )
-    # Do not set up the following fields. They are set up automatically.
-    prompt: bool = field(
-        default=False,
-        metadata={"help": "Whether to use prompt-based fine-tuning"}
-    )
-    template_list: List[str] = field(
-        default=None,
-        metadata={"help": "(DO NOT List of templates (only initialized after the program starts."}
-    )
-
-
-@dataclass
-class DynamicTrainingArguments(TrainingArguments):
-    evaluate_during_training: bool = field(
-        default=False,
-        metadata={"help": "Whether to run evaluation during training or at the end"}
-    )
-
-    log_file: str = field(
-        default='log'
-    )
-
-    # For ensemble
-    array_id: int = field(
-        default=-1,
-        metadata={"help": "Array ID (contains seed and hyper-parameter search) to identify the model"}
-    )
-
-    model_id: int = field(
-        default=-1,
-        metadata={"help": "Model ID (contains template information) to identify the model"}
-    )
-
-    save_logit: bool = field(
-        default=False,
-        metadata={"help": "Save test file logit with name $TASK-$MODEL_ID-$ARRAY_ID.npy"}
-    )
-
-    save_logit_dir: str = field(
-        default=None,
-        metadata={"help": "Where to save the prediction result"}
-    )
-
-    # Regularization
-    update_layers: int = field(
-        default=-1,
-        metadata={"help": "layers to be updated, 0 means embedding layer, -1 means all layers"}
-    )
-
-    # Training
-    save_at_last: bool = field(
-        default=False,
-        metadata={"help": "Instead of saving the best (dev performance) checkpoint, save the last checkpoint"}
-    )
     gradient_accumulation_steps: int = field(
         default=1,
-        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."}
+        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
     )
 
-    # Turn off train/test
-    no_train: bool = field(
-        default=False,
-        metadata={"help": "No training"}
-    )
-    no_predict: bool = field(
-        default=False,
-        metadata={"help": "No test"}
-    )
-    optimizer: str = field(
-        default='adam',
-        metadata={'help': 'choose sgd or adam. default is adam'}
-    )
-    optimizer_variant: str = field(
-        default='',
-        metadata={'help': 'define variants on optimizer: signgd'}
-    )
-
-    trainer: str = field(
-        default="standard",
-        metadata={"help": "Pick from {standard, kernel, linearhead}"}
-    )
-    from_linearhead: bool = field(
-        default=False,
-        metadata={
-            "help": "Whether to initialize head with the linearhead solution. Works for both normal and kernel trainer."}
-    )
-    lp_early_stopping: bool = field(
-        default=False,
-        metadata={
-            "help": "When on, increases the tolerance and lowers max_iter in scikit LogisticRegression solver to encourage early stopping."}
-    )
-    random_model_init: bool = field(
-        default=False,
-        metadata={'help': 'reinit the model randomly'}
-    )
-    sweep: bool = field(
-        default=False,
-        metadata={'help': 'configures the output directories to be informative when running W&B sweep'}
-    )
-
-    num_prefix: int = field(
-        default=10,
-        metadata={"help": "How many prefix tokens to use"}
-    )
-    no_reparam: bool = field(
-        default=False,
-        metadata={"help": "No reparameterization trick"}
-    )
-    prefix_init_by_real_act: bool = field(
-        default=False,
-        metadata={
-            "help": "For no_reparam case, randomly sample words and take their actual key/value pairs as initialization"}
-    )
-    layer_wise_optim: bool = field(
-        default=False,
-        metadata={'help': 'Optimize layer-by-layer (only for prefix + ZO)'}
-    )
-
-    max_steps: int = field(
-        default=0,
-        metadata={'help': 'Stop at this number of forward steps.'}
-    )
-
-    num_train_epochs: int = field(
-        default=10,
-        metadata={'help': 'Number of training epochs，If max_steps is set, this will be ignored.'}
-    )
-
-    learning_rate: int = field(
-        default=1e-5,
-        metadata={'help': 'Learning rate'}
-    )
-
-    lr_scheduler_type: str = field(
-        default='linear',
-        metadata={'help': 'Learning rate scheduler type'}
-    )
-
+    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
     lr_layer_decay_rate: float = field(
-        default=1.0,
-        metadata={'help': 'Learning rate layer decay rate for layer-wise optimizer'}
+        default=0.97, metadata={"help": "The learning rate decay rate for each layer."}
+    )
+    num_train_epochs: float = field(default=3.0, metadata={"help": "Total number of training epochs to perform."})
+    max_steps: int = field(
+        default=-1,
+        metadata={"help": "If > 0: set total number of training steps to perform. Override num_train_epochs."},
+    )
+    lr_scheduler_type: Union[SchedulerType, str] = field(
+        default="linear",
+        metadata={"help": "The scheduler type to use."},
+    )
+    warmup_ratio: float = field(
+        default=0.0, metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."}
+    )
+    warmup_steps: int = field(default=0, metadata={"help": "Linear warmup over warmup_steps."})
+    freeze_encoder_layers: Optional[int] = field(
+        default=-1,
+        metadata={"help": "The number of layers to freeze in the base model."
+                          "If -1, whole base model will be updated, if 0, the embedding layer will be frozen, etc."
+                          "If > 0, the first n layers will be frozen n = min(n, encoder_layers)."}
     )
 
-    optimize_acc: bool = field(
-        default=False,
-        metadata={"help": "Maximize accuracy instead of minimizing loss"}
+    logging_dir: Optional[str] = field(default=None, metadata={"help": "Tensorboard log dir."})
+    logging_strategy: Union[IntervalStrategy, str] = field(
+        default="steps",
+        metadata={"help": "The logging strategy to use."},
+    )
+    logging_steps: float = field(
+        default=500,
+        metadata={
+            "help": (
+                "Log every X updates steps. Should be an integer or a float in range `[0,1)`."
+                "If smaller than 1, will be interpreted as ratio of total training steps."
+            )
+        },
+    )
+    save_strategy: Union[IntervalStrategy, str] = field(
+        default="steps",
+        metadata={"help": "The checkpoint save strategy to use."},
+    )
+    save_steps: float = field(
+        default=500,
+        metadata={
+            "help": (
+                "Save checkpoint every X updates steps. Should be an integer or a float in range `[0,1)`."
+                "If smaller than 1, will be interpreted as ratio of total training steps."
+            )
+        },
+    )
+    save_total_limit: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "If a value is passed, will limit the total amount of checkpoints. Deletes the older checkpoints in"
+                " `output_dir`. When `load_best_model_at_end` is enabled, the 'best' checkpoint according to"
+                " `metric_for_best_model` will always be retained in addition to the most recent ones. For example,"
+                " for `save_total_limit=5` and `load_best_model_at_end=True`, the four last checkpoints will always be"
+                " retained alongside the best model. When `save_total_limit=1` and `load_best_model_at_end=True`,"
+                " it is possible that two checkpoints are saved: the last one and the best one (if they are different)."
+                " Default is unlimited checkpoints"
+            )
+        },
     )
 
-    hf_inference_model: bool = field(
+    seed: int = field(default=42, metadata={"help": "Random seed that will be set at the beginning of training."})
+    data_seed: Optional[int] = field(default=None, metadata={"help": "Random seed to be used with data samplers."})
+
+    local_rank: int = field(default=-1, metadata={"help": "For distributed training: local_rank"})
+    ddp_backend: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The backend to be used for distributed training",
+            "choices": ["nccl", "gloo", "mpi", "ccl"],
+        },
+    )
+
+    remove_unused_columns: Optional[bool] = field(
+        default=True, metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
+    )
+    label_names: Optional[List[str]] = field(
+        default=None, metadata={"help": "The list of keys in your dictionary of inputs that correspond to the labels."}
+    )
+    load_best_model_at_end: Optional[bool] = field(
         default=False,
         metadata={
-            "help": "loads the HF model in inference mode across many GPUs. incompatible with --zero_order_use_trainer_optim."}
+            "help": (
+                "Whether or not to load the best model found during training at the end of training. When this option"
+                " is enabled, the best checkpoint will always be saved. See `save_total_limit` for more."
+            )
+        },
     )
+
+    sharded_ddp: Optional[Union[List[ShardedDDPOption], str]] = field(
+        default="",
+        metadata={
+            "help": (
+                "Whether or not to use sharded DDP training (in distributed training only). The base option should be"
+                " `simple`, `zero_dp_2` or `zero_dp_3` and you can add CPU-offload to `zero_dp_2` or `zero_dp_3` like"
+                " this: zero_dp_2 offload` or `zero_dp_3 offload`. You can add auto-wrap to `zero_dp_2` or `zero_dp_3`"
+                " with the same syntax: zero_dp_2 auto_wrap` or `zero_dp_3 auto_wrap`."
+            ),
+        },
+    )
+
+    # Do not touch this type annotation or it will stop working in CLI
+    deepspeed: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Enable deepspeed and pass the path to deepspeed json config file (e.g. `ds_config.json`) or an already"
+                " loaded json file as a dict"
+            )
+        },
+    )
+    label_smoothing_factor: float = field(
+        default=0.0, metadata={"help": "The label smoothing epsilon to apply (zero means no label smoothing)."}
+    )
+
+    optimizer: Union[OptimizerNames, str] = field(
+        default="adamw_torch",
+        metadata={"help": "The optimizer to use."},
+    )
+
+    dataloader_pin_memory: bool = field(
+        default=True, metadata={"help": "Whether or not to pin memory for DataLoader."}
+    )
+
+    include_inputs_for_metrics: bool = field(
+        default=False, metadata={"help": "Whether or not the inputs will be passed to the `compute_metrics` function."}
+    )
+
+
+if __name__ == "__main__":
+    training_args = CLSTrainingArguments(task_name="llm", output_dir="test_trainer")
+    print(training_args)

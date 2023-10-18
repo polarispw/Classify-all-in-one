@@ -6,7 +6,7 @@ from typing import Callable, Dict
 
 import numpy as np
 import torch
-from data.dataset import CLSTaskDataset, MyDataCollatorWithPadding
+from data.dataset import CLSTaskDataset, CLSDataCollatorWithPadding
 from filelock import FileLock
 from configs.args_list import ModelArguments, DynamicDataTrainingArguments, DynamicTrainingArguments
 from models.modeling_roberta import RobertaConfig
@@ -232,7 +232,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         compute_metrics=build_compute_metrics_fn(data_args.task_name),
-        data_collator=MyDataCollatorWithPadding(tokenizer),
+        data_collator=CLSDataCollatorWithPadding(tokenizer),
         **trainer_kwargs
     )
 

@@ -9,7 +9,7 @@
 - customize the structure of model, invisible to higher levels like data processor or trainer
 - support various metrics
 - customize lr scheduler, optimizer,
-- convenient data loader for text in json files
+- convenient dataset for text in json files, support multi-labels and multi-text content
 - easily run with config.json and CLI
 - auto archive of logs, results and checkpoints, support tensorboard
 - support multi-GPU and low memory for LLMs PEFT

@@ -1,107 +1,104 @@
 import torch
 import torch.nn as nn
-from transformers import BertModel
+from typing import Optional, List
+
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+from transformers import PreTrainedModel, AutoModel, AutoConfig, AutoTokenizer
+from transformers.modeling_outputs import SequenceClassifierOutput
+
+from configs.args_list import CLSModelArguments
 
 
-class BertSCModel(nn.Module):
+class CLSBertLikeModel(PreTrainedModel):
+    """
+    This class is used to build a model that has a BERT-like architecture for sequence classification.
+    """
+    def __init__(self, args: CLSModelArguments):
+        super(CLSBertLikeModel, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
 
-    def __init__(self, pretrained_name='bert-base-uncased', output_hidden_state=False):
-        super(BertSCModel, self).__init__()
-        self.bert = BertModel.from_pretrained(pretrained_name, return_dict=True,
-                                              output_hidden_states=output_hidden_state)
+        # you can change the attributes init in ModelConfig here before loading the model
+        self.name_or_path = args.name_or_path
+        self.cache_dir = args.cache_dir
+        self.max_position_embeddings = args.max_seq_length
+        self.num_labels = args.num_labels
+        self.problem_type = args.problem_type
 
-    def forward(self, inputs):
-        input_ids, input_tyi, input_attn_mask = inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask']
-        output = self.bert(input_ids, input_tyi, input_attn_mask)
-        return output
+        self.base = AutoModel.from_pretrained(self.name_or_path, cache_dir=self.cache_dir)
 
-
-class BertBase(BertSCModel):
-
-    def __init__(self, class_size, pretrained_name='bert-base-uncased', layers=None, pooling=None):
-        super(BertBase, self).__init__(pretrained_name, output_hidden_state=True)
-        self.dropout = nn.Dropout(0.1)
-        self.pooling = pooling
-        if layers is None or layers[0] == -2:
-            self.layers = []
-        elif layers[0] == -1:
-            self.layers = [i for i in range(1, 12)]
-        else:
-            self.layers = layers
-        self.classifier = nn.Linear(768 * max(1, len(self.layers)), class_size)
-
-    def forward(self, inputs):
-        input_ids, input_tyi, input_attn_mask = inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask']
-        output = self.bert(input_ids, input_tyi, input_attn_mask)
-
-        if len(self.layers) > 0:
-            features = []
-            states = output.hidden_states[1:]
-            for l in self.layers:
-                features.append(states[l][:, 0].unsqueeze(1))
-            features = torch.cat(features, dim=1)
-
-            if self.pooling == 'max':
-                features, _ = torch.max(features, dim=1)
-            elif self.pooling == 'mean':
-                features = torch.mean(features, dim=1)
-            else:
-                features = features.view(features.size(0), -1)
-
-            features = self.dropout(features)
-            categories_numberic = self.classifier(features)
-
-        else:
-            features = self.dropout(output.pooler_output)
-            categories_numberic = self.classifier(features)
-        return categories_numberic
-
-
-class BertFFN(BertSCModel):
-
-    def __init__(self, class_size, pretrained_name='bert-base-uncased'):
-        super(BertFFN, self).__init__(pretrained_name)
+        self.classifier_width = 2 * self.config.hidden_size
         self.classifier = nn.Sequential(
-            torch.nn.Linear(768, 512),
-            torch.nn.Dropout(0.3),
-            torch.nn.ReLU(),
-            torch.nn.Linear(512, 64),
+            torch.nn.Linear(self.config.hidden_size, self.classifier_width),
             torch.nn.Dropout(0.2),
             torch.nn.ReLU(),
-            torch.nn.Linear(64, class_size)
+            torch.nn.Linear(self.classifier_width, self.config.hidden_size),
+            torch.nn.Dropout(0.1),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.config.hidden_size, self.num_labels)
         )
 
-    def forward(self, inputs):
-        input_ids, input_tyi, input_attn_mask = inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask']
-        output = self.bert(input_ids, input_tyi, input_attn_mask)
-        categories_numberic = self.classifier(output.pooler_output)
-        return categories_numberic
+    def forward(self,
+                input_ids: Optional[torch.Tensor] = None,
+                attention_mask: Optional[torch.Tensor] = None,
+                token_type_ids: Optional[torch.Tensor] = None,
+                position_ids: Optional[torch.Tensor] = None,
+                head_mask: Optional[torch.Tensor] = None,
+                inputs_embeds: Optional[torch.Tensor] = None,
+                labels: Optional[torch.Tensor] = None,
+                output_attentions: Optional[bool] = None,
+                output_hidden_states: Optional[bool] = None,
+                return_dict: Optional[bool] = None,):
+        outputs = self.base(input_ids=input_ids,
+                            attention_mask=attention_mask,
+                            token_type_ids=token_type_ids,
+                            position_ids=position_ids,
+                            head_mask=head_mask,
+                            inputs_embeds=inputs_embeds,
+                            output_attentions=output_attentions,
+                            output_hidden_states=output_hidden_states,
+                            return_dict=return_dict,)
+        # here we sum the last hidden state of all tokens together for cls input
+        cls_input = outputs.last_hidden_state.sum(dim=1)
+        logits = self.classifier(cls_input)
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return ((loss,) + output) if loss is not None else output
+
+        return SequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
 
 
-class BertLSTM(BertSCModel):
+if __name__ == "__main__":
+    my_model = CLSBertLikeModel(CLSModelArguments('bert-base-uncased', cache_dir='../model_cache'))
 
-    def __init__(self, class_size, pretrained_name='bert-base-uncased'):
-        super(BertLSTM, self).__init__(pretrained_name, output_hidden_state=True)
-        self.classifier = nn.LSTM(768, class_size)
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    test_inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+    print(test_inputs)
 
-    def forward(self, inputs):
-        input_ids, input_tyi, input_attn_mask = inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask']
-        output = self.bert(input_ids, input_tyi, input_attn_mask)
-
-        states = output.hidden_states[1:]
-        cls_s = [state[:, 0, :] for state in states]
-        cls_states = torch.tensor([item.cpu().detach().numpy() for item in cls_s]).cuda()
-        cls_output, (_, _) = self.classifier(cls_states)
-        categories_numberic = cls_output[-1]
-        return categories_numberic
-
-
-class BertSimCSE(BertSCModel):
-    def __init__(self, class_size, pretrained_name='bert-base-uncased'):
-        super(BertSimCSE, self).__init__(pretrained_name)
-
-    def forward(self, inputs):
-        input_ids, input_tyi, input_attn_mask = inputs['input_ids'], inputs['token_type_ids'], inputs['attention_mask']
-        output = self.bert(input_ids, input_tyi, input_attn_mask)
-        output = output.last_hidden_state[:, 0]
-        return output
+    cls_res = my_model(**test_inputs)
+    print(cls_res)

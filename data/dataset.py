@@ -9,15 +9,15 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 from transformers.data.processors.utils import InputFeatures
 
-from format import datasets_mapping, load_datasets_from_json
-from processors import processors_mapping
+from .file_processor import datasets_mapping, load_datasets_from_json
+from .processors import processors_mapping
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
 @dataclass
-class MyDataCollatorWithPadding:
+class CLSDataCollatorWithPadding:
     """
     Implements padding for LM-BFF inputs, return inputs as a dictionary of tensors in batch.
     """
@@ -33,7 +33,7 @@ class MyDataCollatorWithPadding:
 
         for item in features:
             standard_item = {}
-            for field in ["input_ids", "label", "attention_mask", "token_type_ids"]:
+            for field in ["input_ids", "attention_mask", "token_type_ids", "label"]:
                 if getattr(item, field) is not None:
                     standard_item[field] = getattr(item, field)
             standard_features.append(standard_item)
@@ -124,7 +124,11 @@ def tokenize_multipart_input(
             attention_mask = attention_mask[:max_length]
             token_type_ids = token_type_ids[:max_length]
 
-    result = {'input_ids': input_ids, 'attention_mask': attention_mask, 'label': [int(l) for l in input_data['labels']]}
+    result = {'input_ids': input_ids,
+              'attention_mask': attention_mask,
+              'label': int(input_data['labels'][0])
+              }
+
     if 'BERT' in type(tokenizer).__name__:
         # Only provide token type ids for BERT
         result['token_type_ids'] = token_type_ids
@@ -138,23 +142,24 @@ class CLSTaskDataset(Dataset):
     """
     def __init__(self, args, tokenizer, mode: str = "train"):
         self.args = args
-        self.mode = mode
 
-        self.task_name = args.task_name
         self.data_desc = datasets_mapping[args.task_name]
-
-        self.tokenizer = tokenizer
         self.processor = processors_mapping[args.task_name]
 
-        # Get label list and (for prompt) label word list
+        self.tokenizer = tokenizer
+
+        # Get data in list
         if mode == "train":
             self.data_list, _, _ = load_datasets_from_json(self.data_desc)
         elif mode == "dev":
             _, self.data_list, _ = load_datasets_from_json(self.data_desc)
         elif mode == "test":
             _, _, self.data_list = load_datasets_from_json(self.data_desc)
+
+        # Get label list and do mapping
         self.label_list = self.data_desc.label_list
-        self.num_labels = len(self.label_list)
+        self.label_to_id = {label: i for i, label in enumerate(self.label_list)}
+        self.id_to_label = {i: label for i, label in enumerate(self.label_list)}
 
     def __getitem__(self, i):
         """
@@ -163,7 +168,7 @@ class CLSTaskDataset(Dataset):
         # Prepare features
         inputs = tokenize_multipart_input(
             input_data=self.data_list[i],
-            max_length=self.args.max_length,
+            max_length=self.args.max_seq_length,
             tokenizer=self.tokenizer,
             truncate_head=False,
         )
@@ -172,9 +177,6 @@ class CLSTaskDataset(Dataset):
 
     def __len__(self):
         return len(self.data_list)
-
-    def get_labels(self):
-        return self.label_list
 
 
 if __name__ == "__main__":
@@ -187,8 +189,8 @@ if __name__ == "__main__":
     dataset = CLSTaskDataset(args=test_args, tokenizer=test_tokenizer, mode="train")
     print(dataset[0])
 
-    data_collator = MyDataCollatorWithPadding(tokenizer=test_tokenizer)
+    data_collator = CLSDataCollatorWithPadding(tokenizer=test_tokenizer)
     data_list = []
     for i in range(8):
         data_list.append(dataset[i])
-    print(data_collator.__call__(data_list)["input_ids"])
+    print(data_collator.__call__(data_list))

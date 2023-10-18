@@ -2,6 +2,7 @@
 transfer other formats to json and conduct division
 """
 import json
+import os.path
 
 import pandas as pd
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ class DatasetDescription:
     This class is used to describe the dataset.
     """
     task_name: str
-    data_dir: str  # raw file of the dataset, if your dataset is well formatted, you can leave it None
+    rawdata_dir: str  # raw file of the dataset, if your dataset is well formatted, you can leave it None
     train_file: str
     dev_file: str
     test_file: str
@@ -26,10 +27,10 @@ class DatasetDescription:
     test_sample_num: int
 
 
-datasets_mapping = {
+datasets_description_mapping = {
     "detector": DatasetDescription(
         task_name="mr",
-        data_dir="../data_lib/mr/",
+        rawdata_dir="../data_lib/mr/",
         train_file="../data_lib/mr/train.json",
         dev_file="../data_lib/mr/dev.json",
         test_file="../data_lib/mr/test.json",
@@ -43,7 +44,7 @@ datasets_mapping = {
     ),
     "llm": DatasetDescription(
         task_name="chatgpt_review",
-        data_dir="../data_lib/chatgpt_review/chatgpt_reviews.csv",
+        rawdata_dir="../data_lib/chatgpt_review/chatgpt_reviews.csv",
         train_file="../data_lib/chatgpt_review/chatgpt_reviews_train.json",
         dev_file="../data_lib/chatgpt_review/chatgpt_reviews_dev.json",
         test_file="../data_lib/chatgpt_review/chatgpt_reviews_test.json",
@@ -57,7 +58,7 @@ datasets_mapping = {
     ),
     "nlp": DatasetDescription(
         task_name="subj",
-        data_dir="../data_lib/subj/",
+        rawdata_dir="../data_lib/subj/",
         train_file="../data_lib/subj/train.json",
         dev_file="../data_lib/subj/dev.json",
         test_file="../data_lib/subj/test.json",
@@ -81,7 +82,7 @@ def load_data_from_rawfile(data_desc: DatasetDescription):
     :return: [{labels: , texts: }, ...]
     """
     data = []
-    data_dir = data_desc.data_dir
+    data_dir = data_desc.rawdata_dir
     assert data_dir is not None, "data_dir is None, please check your data description."
     file_format = data_dir.split('.')[-1]
     if file_format == 'csv':
@@ -131,7 +132,7 @@ def random_divide_dataset(data_desc, ratio=None):
 
     # Randomly shuffle data
     if ratio is None:
-        ratio = [0.8, 0.1, 0.1]
+        ratio = [0.8, 0.2, 0.0]
     train_sample_num = int(len(data) * ratio[0])
     dev_sample_num = int(len(data) * ratio[1])
     test_sample_num = int(len(data) * ratio[2])
@@ -144,7 +145,7 @@ def random_divide_dataset(data_desc, ratio=None):
     dev_data = data[train_sample_num:train_sample_num + dev_sample_num]
     test_data = data[train_sample_num + dev_sample_num:train_sample_num + dev_sample_num + test_sample_num]
     # Save data as json files
-    data_dir = data_desc.data_dir
+    data_dir = data_desc.rawdata_dir
     train_file = data_dir.rsplit('.', 1)[0] + '_train.json'
     dev_file = data_dir.rsplit('.', 1)[0] + '_dev.json'
     test_file = data_dir.rsplit('.', 1)[0] + '_test.json'
@@ -165,20 +166,31 @@ def load_datasets_from_json(data_desc: DatasetDescription):
     :param data_desc:
     :return: [{labels, texts}, ...], [...], [...]
     """
-    with open(data_desc.train_file, 'r', encoding='utf-8') as f:
-        train_data = json.load(f)
-    with open(data_desc.dev_file, 'r', encoding='utf-8') as f:
-        dev_data = json.load(f)
-    with open(data_desc.test_file, 'r', encoding='utf-8') as f:
-        test_data = json.load(f)
+    if data_desc.train_file is not None and os.path.isfile(data_desc.train_file):
+        with open(data_desc.train_file, 'r', encoding='utf-8') as f:
+            train_data = json.load(f)
+    else:
+        train_data = []
+
+    if data_desc.dev_file is not None and os.path.isfile(data_desc.dev_file):
+        with open(data_desc.dev_file, 'r', encoding='utf-8') as f:
+            dev_data = json.load(f)
+    else:
+        dev_data = []
+
+    if data_desc.test_file is not None and os.path.isfile(data_desc.test_file):
+        with open(data_desc.test_file, 'r', encoding='utf-8') as f:
+            test_data = json.load(f)
+    else:
+        test_data = []
 
     return train_data, dev_data, test_data
 
 
 if __name__ == "__main__":
-    test_dataset = load_data_from_rawfile(datasets_mapping["llm"])
+    test_dataset = load_data_from_rawfile(datasets_description_mapping["llm"])
     print(test_dataset[0])
-    random_divide_dataset(datasets_mapping["llm"])
-    train_data, dev_data, test_data = load_datasets_from_json(datasets_mapping["llm"])
+    random_divide_dataset(datasets_description_mapping["llm"])
+    train_data, dev_data, test_data = load_datasets_from_json(datasets_description_mapping["llm"])
     print(train_data[0])
     print(len(train_data), len(dev_data), len(test_data))

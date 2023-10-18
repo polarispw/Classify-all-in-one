@@ -1,14 +1,15 @@
 """
-this file is used to augment the data
+this file contains data augmentation methods
 """
 
 import argparse
 import json
 import random
+from os import wait
 
 from transformers import pipeline
 from torch import cosine_similarity
-from format import datasets_mapping, load_data_from_rawfile
+from file_processor import datasets_mapping, load_data_from_rawfile
 from utils.chatgpt_api import gpt_35_api_stream
 
 
@@ -24,7 +25,7 @@ class Augmenter(object):
         self.tokenizer = args.tokenizer
         self.method = args.method
         self.metric = args.metric
-        self.data_dir = args.data_dir
+        self.data_dir = args.rawdata_dir
 
         # load data and shuffle
         self.data_list = load_data_from_rawfile(datasets_mapping[args.task])
@@ -140,6 +141,7 @@ class Augmenter(object):
                             new_data["texts"].append(message[-1]["content"])
                         else:
                             raise Exception("chatgpt api error")
+                        wait(60)   # wait for 1 minute
                     self.augmented_data_list.append(new_data)
                     self.to_do_list[label] -= 1
                 else:
@@ -166,13 +168,13 @@ class Augmenter(object):
 
     def evaluate(self, text1, text2):
         """
-        this function is used to evaluate the augmentation
+        this function is used to evaluate the augmentation quality
         """
         pass
 
     def save(self):
         """
-        this function is used to save the augmented data
+        this function is used to save the augmented data to json file
         """
         self.data_list.append(self.augmented_data_list)
         if self.args.inplace:
