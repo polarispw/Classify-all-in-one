@@ -17,6 +17,22 @@ class TaskNameList(ExplicitEnum):
 
 
 @dataclass
+class CLSDatasetArguments:
+    """
+    Arguments about the task dataset.
+    """
+    data_path: str = field(
+        default="../data_lib/llm",
+        metadata={"help": "Path to the dataset"}
+    )
+    seed: int = field(
+        default=42,
+        metadata={"help": "Random seed that will be used when sampling data from the dataset."}
+    )
+
+
+
+@dataclass
 class CLSModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.

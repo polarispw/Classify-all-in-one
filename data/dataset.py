@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 from transformers.data.processors.utils import InputFeatures
 
-from .file_processor import datasets_mapping, load_datasets_from_json
+from file_processor import datasets_description_mapping, load_datasets_from_json
 from .processors import processors_mapping
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,7 @@ class CLSTaskDataset(Dataset):
     def __init__(self, args, tokenizer, mode: str = "train"):
         self.args = args
 
-        self.data_desc = datasets_mapping[args.task_name]
+        self.data_desc = datasets_description_mapping[args.task_name]
         self.processor = processors_mapping[args.task_name]
 
         self.tokenizer = tokenizer
@@ -181,9 +181,9 @@ class CLSTaskDataset(Dataset):
 
 if __name__ == "__main__":
     from transformers import AutoTokenizer
-    from configs.args_list import ModelArguments
+    from configs.args_list import CLSModelArguments
 
-    test_args = ModelArguments("./")
+    test_args = CLSModelArguments("./")
     test_args.task_name = "llm"
     test_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     dataset = CLSTaskDataset(args=test_args, tokenizer=test_tokenizer, mode="train")

@@ -8,7 +8,6 @@ import random
 from os import wait
 
 from transformers import pipeline
-from torch import cosine_similarity
 from file_processor import datasets_mapping, load_data_from_rawfile
 from utils.chatgpt_api import gpt_35_api_stream
 
@@ -20,12 +19,13 @@ class Augmenter(object):
     """
 
     def __init__(self, args):
-        self.args = args
         self.model = args.model
         self.tokenizer = args.tokenizer
         self.method = args.method
         self.metric = args.metric
         self.data_dir = args.rawdata_dir
+        self.cache_dir = args.cache_dir
+        self.inplace = args.inplace
 
         # load data and shuffle
         self.data_list = load_data_from_rawfile(datasets_mapping[args.task])
@@ -61,7 +61,7 @@ class Augmenter(object):
         mask_filler = pipeline("fill-mask",
                                model=self.model,
                                tokenizer=self.tokenizer,
-                               cache_dir=self.args.cache_dir)
+                               cache_dir=self.cache_dir)
         for data in self.data_list:
             for label in data["labels"]:
                 if self.to_do_list[label] > 0:
@@ -102,11 +102,11 @@ class Augmenter(object):
         translator1 = pipeline("translation_en_to_fr",
                                model=self.model,
                                tokenizer=self.tokenizer,
-                               cache_dir=self.args.cache_dir)
+                               cache_dir=self.cache_dir)
         translator2 = pipeline("translation_fr_to_en",
                                model=self.model,
                                tokenizer=self.tokenizer,
-                               cache_dir=self.args.cache_dir)
+                               cache_dir=self.cache_dir)
         for data in self.data_list:
             for label in data["labels"]:
                 if self.to_do_list[label] > 0:
@@ -164,7 +164,7 @@ class Augmenter(object):
 
         self.save()
 
-        return self.evaluate()
+        return
 
     def evaluate(self, text1, text2):
         """
@@ -177,7 +177,7 @@ class Augmenter(object):
         this function is used to save the augmented data to json file
         """
         self.data_list.append(self.augmented_data_list)
-        if self.args.inplace:
+        if self.inplace:
             augmented_file = datasets_mapping[self.args.task].train_file
         else:
             augmented_file = datasets_mapping[self.args.task].train_file.rsplit('.', 1)[0] + '_augmented.json'
