@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional, List, Union
 
-from transformers import TrainingArguments, SchedulerType, IntervalStrategy
+from transformers import TrainingArguments, SchedulerType, IntervalStrategy, HfArgumentParser
 from transformers.trainer_utils import ShardedDDPOption
 from transformers.training_args import OptimizerNames
 from transformers.utils import ExplicitEnum
@@ -22,19 +22,24 @@ class CLSModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
     name_or_path: str = field(
+        default="bert_base_uncased",
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+        default=None,
+        metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
     cache_dir: Optional[str] = field(
-        default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from HF"}
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from HF"}
     )
     problem_type: Optional[str] = field(
-        default=None, metadata={"help": "The type of the problem: one of `[single, multi]_label_classification`, `regression`"}
+        default=None,
+        metadata={"help": "Type of the problem: `[single, multi]_label_classification`, `regression`"}
     )
     num_labels: Optional[int] = field(
-        default=2, metadata={"help": "Number of labels to use in the last layer of the model."}
+        default=2,
+        metadata={"help": "Number of labels to use in the last layer of the model."}
     )
     max_seq_length: Optional[int] = field(
         default=512,
@@ -72,6 +77,7 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
     output_dir: str = field(
+        default="../archive",
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     overwrite_output_dir: bool = field(
@@ -206,7 +212,7 @@ class CLSTrainingArguments(TrainingArguments):
         },
     )
 
-    # Do not touch this type annotation or it will stop working in CLI
+    # Do not touch this type annotation, or it will stop working in CLI
     deepspeed: Optional[str] = field(
         default=None,
         metadata={
@@ -235,5 +241,10 @@ class CLSTrainingArguments(TrainingArguments):
 
 
 if __name__ == "__main__":
-    training_args = CLSTrainingArguments(task_name="llm", output_dir="test_trainer")
-    print(training_args)
+    model_args = CLSModelArguments(name_or_path="bert-base-uncased")
+    training_args = CLSTrainingArguments(task_name="llm", output_dir="../archive")
+
+    parser = HfArgumentParser((CLSModelArguments, CLSTrainingArguments))
+    # returns tuple of dataclasses
+    args = parser.parse_args_into_dataclasses()
+    print(args)

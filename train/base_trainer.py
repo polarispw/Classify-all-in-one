@@ -16,7 +16,7 @@ class CLSTrainer(Trainer):
     def create_optimizer(self):
         """
         Based on Transformers' default one, we add fixing layer option and layer wise learning rate.
-        It works well on BERT-like encoder models. For seq2seq or decoder models, it needs to be overridden.
+        It works well on BERT-like encoder models. For seq2seq or decoder models, it needs to be overwritten.
         """
         # No existing optimizer, create the optimizer
         if self.optimizer is None:

@@ -47,6 +47,7 @@ class CLSBertLikeModel(PreTrainedModel):
                 output_attentions: Optional[bool] = None,
                 output_hidden_states: Optional[bool] = None,
                 return_dict: Optional[bool] = None,):
+
         outputs = self.base(input_ids=input_ids,
                             attention_mask=attention_mask,
                             token_type_ids=token_type_ids,
@@ -56,9 +57,12 @@ class CLSBertLikeModel(PreTrainedModel):
                             output_attentions=output_attentions,
                             output_hidden_states=output_hidden_states,
                             return_dict=return_dict,)
+
         # here we sum the last hidden state of all tokens together for cls input
         cls_input = outputs.last_hidden_state.sum(dim=1)
         logits = self.classifier(cls_input)
+
+        # here we compute the loss
         loss = None
         if labels is not None:
             if self.config.problem_type is None:
