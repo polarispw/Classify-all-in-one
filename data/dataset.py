@@ -1,196 +1,106 @@
-import dataclasses
-import json
-import logging
-from dataclasses import dataclass
-from typing import List, Optional, Union
+"""
+this is base dataset for all CLS tasks
+"""
+import os
+from typing import List
 
-import pandas as pd
-from torch.utils.data import Dataset
-from transformers import PreTrainedTokenizerBase
-from transformers.data.processors.utils import InputFeatures
+import datasets
+from datasets import load_dataset, DatasetDict, Dataset
 
-from file_processor import datasets_description_mapping, load_datasets_from_json
-from .processors import processors_mapping
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+from configs.args_list import CLSDatasetArguments
 
 
-@dataclass
-class CLSDataCollatorWithPadding:
+class CLSDataset:
     """
-    Implements padding for LM-BFF inputs, return inputs as a dictionary of tensors in batch.
+    This is a dataset class for CLS task
     """
 
-    tokenizer: PreTrainedTokenizerBase
-    padding: Union[bool, str] = True
-    max_length: Optional[int] = None
-    pad_to_multiple_of: Optional[int] = None
-    return_tensors: str = "pt"
-
-    def __call__(self, features):
-        standard_features = []
-
-        for item in features:
-            standard_item = {}
-            for field in ["input_ids", "attention_mask", "token_type_ids", "label"]:
-                if getattr(item, field) is not None:
-                    standard_item[field] = getattr(item, field)
-            standard_features.append(standard_item)
-
-        batch = self.tokenizer.pad(
-            standard_features,
-            padding=self.padding,
-            max_length=self.max_length,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors=self.return_tensors,
-        )
-
-        if "label" in batch:
-            batch["labels"] = batch["label"]
-            del batch["label"]
-        if "label_ids" in batch:
-            batch["labels"] = batch["label_ids"]
-            del batch["label_ids"]
-
-        return batch
-
-
-@dataclass(frozen=True)
-class CLSInputFeatures(InputFeatures):
-    """
-    Inherit from Transformers' InputFeatuers.
-    """
-    input_ids: List[int]
-    attention_mask: Optional[List[int]] = None
-    token_type_ids: Optional[List[int]] = None
-    label: Optional[Union[int, float]] = None
-
-    def to_json_string(self):
-        """Serializes this instance to a JSON string."""
-        return json.dumps(dataclasses.asdict(self)) + "\n"
-
-
-def tokenize_multipart_input(
-        input_data,
-        max_length,
-        tokenizer,
-        truncate_head=False,
-):
-    def enc(text):
-        return tokenizer.encode(text, add_special_tokens=False)
-
-    input_text_list = input_data['texts']
-    input_ids = []
-    attention_mask = []
-    token_type_ids = []  # Only for BERT
-    mask_pos = None  # Position of the mask token
-
-    if tokenizer.cls_token_id is not None:
-        input_ids = [tokenizer.cls_token_id]
-        attention_mask = [1]
-        token_type_ids = [0]
-    else:
-        input_ids = []
-        attention_mask = []
-        token_type_ids = []
-
-    for sent_id, input_text in enumerate(input_text_list):
-        if input_text is None:
-            logging.warning(f"Missing input of sentence {sent_id}")
-            continue
-        if pd.isna(input_text) or input_text is None:
-            # Empty input
-            input_text = ''
-        input_tokens = enc(input_text) + [tokenizer.sep_token_id]
-        input_ids += input_tokens
-        attention_mask += [1 for i in range(len(input_tokens))]
-        token_type_ids += [sent_id for i in range(len(input_tokens))]
-
-    if 'T5' in type(tokenizer).__name__:  # T5 does not have CLS token
-        input_ids = input_ids[1:]
-        attention_mask = attention_mask[1:]
-        token_type_ids = token_type_ids[1:]
-
-    # Truncate
-    if len(input_ids) > max_length:
-        if truncate_head:
-            input_ids = input_ids[-max_length:]
-            attention_mask = attention_mask[-max_length:]
-            token_type_ids = token_type_ids[-max_length:]
+    def __init__(self, args: CLSDatasetArguments, tokenizer):
+        # check the file
+        self.data_path = args.data_path
+        if not os.path.exists(self.data_path):
+            raise FileNotFoundError(f"Data path {self.data_path} does not exist.")
+        elif ".csv" in self.data_path:
+            self.file_type = "csv"
+        elif ".json" in self.data_path:
+            self.file_type = "json"
+        elif ".txt" in self.data_path:
+            self.file_type = "txt"
         else:
-            # Default is to truncate the tail
-            input_ids = input_ids[:max_length]
-            attention_mask = attention_mask[:max_length]
-            token_type_ids = token_type_ids[:max_length]
-
-    result = {'input_ids': input_ids,
-              'attention_mask': attention_mask,
-              'label': int(input_data['labels'][0])
-              }
-
-    if 'BERT' in type(tokenizer).__name__:
-        # Only provide token type ids for BERT
-        result['token_type_ids'] = token_type_ids
-
-    return result
-
-
-class CLSTaskDataset(Dataset):
-    """
-    This is a dataset for CLS task
-    """
-    def __init__(self, args, tokenizer, mode: str = "train"):
-        self.args = args
-
-        self.data_desc = datasets_description_mapping[args.task_name]
-        self.processor = processors_mapping[args.task_name]
+            raise NotImplementedError(f"File type {self.file_type} is not supported.")
 
         self.tokenizer = tokenizer
+        self.random_seed = args.seed
 
-        # Get data in list
-        if mode == "train":
-            self.data_list, _, _ = load_datasets_from_json(self.data_desc)
-        elif mode == "dev":
-            _, self.data_list, _ = load_datasets_from_json(self.data_desc)
-        elif mode == "test":
-            _, _, self.data_list = load_datasets_from_json(self.data_desc)
+        self.raw_datasets = None
+        self.tokenized_datasets = None
+        self.balanced_subset = None
 
-        # Get label list and do mapping
-        self.label_list = self.data_desc.label_list
-        self.label_to_id = {label: i for i, label in enumerate(self.label_list)}
-        self.id_to_label = {i: label for i, label in enumerate(self.label_list)}
+    def load_dataset(self) -> DatasetDict:
+        if self.file_type == "csv":
+            self.raw_datasets = load_dataset("csv", data_files=self.data_path)
+        elif self.file_type == "json":
+            self.raw_datasets = load_dataset("json", data_files=self.data_path)
+        elif self.file_type == "txt":
+            self.raw_datasets = load_dataset("text", data_files=self.data_path)
 
-    def __getitem__(self, i):
+        return self.raw_datasets
+
+    def sample_balanced_subsets(self, num_for_each_class: int = None) -> DatasetDict:
         """
-        Returns a list of processed "InputFeatures".
+        This function is used to sample balanced subsets from the **train** dataset.
+        :return:
         """
-        # Prepare features
-        inputs = tokenize_multipart_input(
-            input_data=self.data_list[i],
-            max_length=self.args.max_seq_length,
-            tokenizer=self.tokenizer,
-            truncate_head=False,
-        )
-        features = CLSInputFeatures(**inputs)
-        return features
+        # get the num of data in each class
+        num_data = {}
+        if self.raw_datasets is None:
+            self.load_dataset()
 
-    def __len__(self):
-        return len(self.data_list)
+        for label in self.raw_datasets["train"]["label"]:
+            if label not in num_data:
+                num_data[label] = 1
+            else:
+                num_data[label] += 1
+
+        # randomly sample the min_num_data from each class
+        min_num_data = min(num_data.values()) if num_for_each_class is None else min(num_for_each_class,
+                                                                                     min(num_data.values()))
+        sampled_data = []
+        for label in num_data:
+            sampled_data.append(self.raw_datasets["train"].filter(lambda example: example["label"] == label).shuffle(
+                seed=self.random_seed).select(range(min_num_data)))
+
+        # concatenate the sampled data
+        self.balanced_subset = DatasetDict({"train": datasets.concatenate_datasets(sampled_data)})
+        return self.balanced_subset
+
+    def tokenize_dataset(self, col_names: List) -> DatasetDict:
+        """
+        This function is used to tokenize the dataset.
+        Func of tokenizer is also implemented in data_collator, which is recommended.
+        If you tokenize the dataset here, just use DefaultDataCollator in trainer to avoid tokenization again.
+        :param col_names: title of columns to be tokenized
+        :return:  dataset
+        """
+        if self.raw_datasets is None:
+            self.load_dataset()
+
+        self.tokenized_datasets = self.raw_datasets
+        for col_name in col_names:
+            self.tokenized_datasets = self.tokenized_datasets.map(lambda example: self.tokenizer(example[col_name]),
+                                                                  batched=True)
+        return self.tokenized_datasets
 
 
 if __name__ == "__main__":
     from transformers import AutoTokenizer
-    from configs.args_list import CLSModelArguments
 
-    test_args = CLSModelArguments("./")
-    test_args.task_name = "llm"
-    test_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    dataset = CLSTaskDataset(args=test_args, tokenizer=test_tokenizer, mode="train")
-    print(dataset[0])
+    my_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    my_dataset = CLSDataset(args=CLSDatasetArguments(data_path="../data_lib/fake_reviews/fake reviews dataset.csv"),
+                            tokenizer=my_tokenizer)
 
-    data_collator = CLSDataCollatorWithPadding(tokenizer=test_tokenizer)
-    data_list = []
-    for i in range(8):
-        data_list.append(dataset[i])
-    print(data_collator.__call__(data_list))
+    balanced_dataset = my_dataset.sample_balanced_subsets(32)["train"]
+    tokenized_dataset = my_dataset.tokenize_dataset(["text_"])["train"]
+    print(my_dataset.raw_datasets)
+    print(balanced_dataset)
+    print(tokenized_dataset[0])
