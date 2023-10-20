@@ -97,7 +97,7 @@ if __name__ == "__main__":
     import evaluate
 
     from configs.args_list import CLSTrainingArguments, CLSModelArguments
-    from models.modeling_bert import CLSBertLikeModel
+    from models.modeling_bert import BertLikeModel4CLSFT, BertLikeModel4SSIMPT
 
     raw_datasets = load_dataset("glue", "mrpc")
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     model_args = CLSModelArguments(name_or_path='bert-base-uncased', cache_dir='../model_cache')
-    my_model = CLSBertLikeModel(model_args)
+    my_model = BertLikeModel4SSIMPT(model_args)
 
 
     def compute_metrics(eval_preds):

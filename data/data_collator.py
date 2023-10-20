@@ -13,7 +13,7 @@ from transformers.utils import PaddingStrategy
 
 
 @dataclass
-class DataCollatorForCLSPretrain:
+class DataCollatorForCLS:
     """
        Data collator that will dynamically pad the inputs received.
 
@@ -61,3 +61,4 @@ class DataCollatorForCLSPretrain:
             batch["labels"] = batch["label_ids"]
             del batch["label_ids"]
         return batch
+

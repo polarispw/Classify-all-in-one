@@ -1,5 +1,5 @@
 """
-this is base dataset for all CLS tasks
+Here includes Dataset class for different tasks
 """
 import os
 from typing import List
@@ -12,7 +12,7 @@ from configs.args_list import CLSDatasetArguments
 
 class CLSDataset:
     """
-    This is a dataset class for CLS task
+    This is a dataset class for base CLS task
     """
 
     def __init__(self, args: CLSDatasetArguments, tokenizer):
@@ -49,13 +49,13 @@ class CLSDataset:
     def sample_balanced_subsets(self, num_for_each_class: int = None) -> DatasetDict:
         """
         This function is used to sample balanced subsets from the **train** dataset.
-        :return:
         """
         # get the num of data in each class
         num_data = {}
         if self.raw_datasets is None:
             self.load_dataset()
 
+        # if no key named "train", change here to fit your dataset or use dataset.train_test_split() to split it
         for label in self.raw_datasets["train"]["label"]:
             if label not in num_data:
                 num_data[label] = 1
@@ -70,26 +70,44 @@ class CLSDataset:
             sampled_data.append(self.raw_datasets["train"].filter(lambda example: example["label"] == label).shuffle(
                 seed=self.random_seed).select(range(min_num_data)))
 
-        # concatenate the sampled data
-        self.balanced_subset = DatasetDict({"train": datasets.concatenate_datasets(sampled_data)})
+        # rank the sampled data in turn of label, for SIMCSE pretrain
+        ranked_data = []
+        for i in range(min_num_data):
+            for l in range(len(sampled_data)):
+                ranked_data.append(sampled_data[l][i])
+
+        self.balanced_subset = DatasetDict({"train": datasets.Dataset.from_list(ranked_data)})
         return self.balanced_subset
 
     def tokenize_dataset(self, col_names: List) -> DatasetDict:
         """
         This function is used to tokenize the dataset.
         Func of tokenizer is also implemented in data_collator, which is recommended.
-        If you tokenize the dataset here, just use DefaultDataCollator in trainer to avoid tokenization again.
+        If you tokenize the dataset here, tokenizer in trainer should be None to avoid tokenization again.
+        .
+
         :param col_names: title of columns to be tokenized
-        :return:  dataset
         """
         if self.raw_datasets is None:
             self.load_dataset()
 
         self.tokenized_datasets = self.raw_datasets
         for col_name in col_names:
-            self.tokenized_datasets = self.tokenized_datasets.map(lambda example: self.tokenizer(example[col_name]),
+            self.tokenized_datasets = self.tokenized_datasets.map(lambda example: self.tokenizer(example[col_name],
+                                                                                                 truncation=True,
+                                                                                                 padding="max_length",),
                                                                   batched=True)
         return self.tokenized_datasets
+
+    def merge_columns(self, col_names: List, new_col_name: str) -> DatasetDict:
+        """
+        This function is used to merge columns into one column.
+        """
+        if self.raw_datasets is None:
+            self.load_dataset()
+
+        self.raw_datasets = self.raw_datasets.map(lambda example: {"text_": " ".join([example[col_name] for col_name in col_names])})
+        return self.raw_datasets
 
 
 if __name__ == "__main__":
@@ -102,5 +120,5 @@ if __name__ == "__main__":
     balanced_dataset = my_dataset.sample_balanced_subsets(32)["train"]
     tokenized_dataset = my_dataset.tokenize_dataset(["text_"])["train"]
     print(my_dataset.raw_datasets)
-    print(balanced_dataset)
+    print(balanced_dataset[0:10]["label"])
     print(tokenized_dataset[0])
