@@ -186,6 +186,7 @@ class BertLikeModel4SSIMPT(PreTrainedModel):
         pos_probs = torch.where(labels.unsqueeze(1) == labels.unsqueeze(0), sim, torch.zeros_like(sim))
         neg_probs = torch.where(labels.unsqueeze(1) != labels.unsqueeze(0), sim, torch.zeros_like(sim))
         pos_probs = torch.sub(pos_probs, torch.eye(labels.shape[0], device=sim.device) / self.scale)
+
         neg_probs = torch.add(neg_probs, torch.eye(labels.shape[0], device=sim.device) / self.scale)
         pos_probs = torch.sum(pos_probs, dim=0)
         neg_probs = torch.sum(neg_probs, dim=0)

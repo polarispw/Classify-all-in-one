@@ -1,5 +1,7 @@
+import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Union
+from datetime import datetime
 
 from transformers import TrainingArguments, SchedulerType, IntervalStrategy, HfArgumentParser
 from transformers.trainer_utils import ShardedDDPOption
@@ -22,14 +24,9 @@ class CLSDatasetArguments:
     Arguments about the task dataset.
     """
     data_path: str = field(
-        default="../data_lib/llm",
+        default="data_lib/fake_reviews/fake reviews dataset.csv",
         metadata={"help": "Path to the dataset"}
     )
-    seed: int = field(
-        default=42,
-        metadata={"help": "Random seed that will be used when sampling data from the dataset."}
-    )
-
 
 
 @dataclass
@@ -38,7 +35,7 @@ class CLSModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
     name_or_path: str = field(
-        default="bert_base_uncased",
+        default="bert-base-uncased",
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
@@ -46,7 +43,7 @@ class CLSModelArguments:
         metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
     cache_dir: Optional[str] = field(
-        default=None,
+        default="model_cache/",
         metadata={"help": "Where do you want to store the pretrained models downloaded from HF"}
     )
     problem_type: Optional[str] = field(
@@ -60,20 +57,6 @@ class CLSModelArguments:
     max_seq_length: Optional[int] = field(
         default=512,
         metadata={"help": "Max input length"}
-    )
-
-    # LoRA arguments: only for BERT-type model
-    apply_lora: bool = field(
-        default=False,
-        metadata={'help': 'use LoRA for fine tuning'}
-    )
-    lora_alpha: int = field(
-        default=None,
-        metadata={'help': 'initialization scale for one of the low rank matrices in lora'}
-    )
-    lora_r: int = field(
-        default=None,
-        metadata={'help': 'inner rank for lora matrices'}
     )
 
 
@@ -92,10 +75,18 @@ class CLSTrainingArguments(TrainingArguments):
         default="llm",
         metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
+    task_type: Optional[str] = field(
+        default="pre-train",
+        metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`"}
+    )
+
+    now = datetime.now()
+    dt_str = now.strftime('%m_%d_%H_%M_%S')
     output_dir: str = field(
-        default="../archive",
+        default=os.path.join("archive/", dt_str),
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
+
     overwrite_output_dir: bool = field(
         default=False,
         metadata={
@@ -106,7 +97,7 @@ class CLSTrainingArguments(TrainingArguments):
         },
     )
 
-    do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
+    do_train: bool = field(default=True, metadata={"help": "Whether to run training."})
     do_eval: bool = field(default=False, metadata={"help": "Whether to run eval on the dev set."})
     do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
 
@@ -145,7 +136,10 @@ class CLSTrainingArguments(TrainingArguments):
                           "If -1, whole base model will be updated, if 0, the embedding layer will be frozen, etc."
                           "If > 0, the first n layers will be frozen n = min(n, encoder_layers)."}
     )
-
+    log_file: Optional[str] = field(
+        default='log.txt',
+        metadata={"help": "The log file to record training process."}
+    )
     logging_dir: Optional[str] = field(default=None, metadata={"help": "Tensorboard log dir."})
     logging_strategy: Union[IntervalStrategy, str] = field(
         default="steps",
@@ -189,7 +183,6 @@ class CLSTrainingArguments(TrainingArguments):
     )
 
     seed: int = field(default=42, metadata={"help": "Random seed that will be set at the beginning of training."})
-    data_seed: Optional[int] = field(default=None, metadata={"help": "Random seed to be used with data samplers."})
 
     local_rank: int = field(default=-1, metadata={"help": "For distributed training: local_rank"})
     ddp_backend: Optional[str] = field(

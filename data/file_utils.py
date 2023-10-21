@@ -1,5 +1,6 @@
 """
-transfer other formats to json and conduct division
+Here are utils for augmentation, just make it lighter for not involving the transformers & datasets
+When doing training, just use datasets.py
 """
 import json
 import os.path

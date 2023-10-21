@@ -15,7 +15,7 @@ class CLSDataset:
     This is a dataset class for base CLS task
     """
 
-    def __init__(self, args: CLSDatasetArguments, tokenizer):
+    def __init__(self, args: CLSDatasetArguments, tokenizer, seed):
         # check the file
         self.data_path = args.data_path
         if not os.path.exists(self.data_path):
@@ -30,7 +30,7 @@ class CLSDataset:
             raise NotImplementedError(f"File type {self.file_type} is not supported.")
 
         self.tokenizer = tokenizer
-        self.random_seed = args.seed
+        self.random_seed = seed
 
         self.raw_datasets = None
         self.tokenized_datasets = None

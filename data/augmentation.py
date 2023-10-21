@@ -8,7 +8,7 @@ import random
 from os import wait
 
 from transformers import pipeline
-from file_processor import datasets_mapping, load_data_from_rawfile
+from file_utils import datasets_description_mapping, load_data_from_rawfile
 from utils.chatgpt_api import gpt_35_api_stream
 
 
@@ -28,7 +28,7 @@ class Augmenter(object):
         self.inplace = args.inplace
 
         # load data and shuffle
-        self.data_list = load_data_from_rawfile(datasets_mapping[args.task])
+        self.data_list = load_data_from_rawfile(datasets_description_mapping[args.task])
         random.shuffle(self.data_list)
 
         self.augmented_data_list = []
@@ -178,9 +178,9 @@ class Augmenter(object):
         """
         self.data_list.append(self.augmented_data_list)
         if self.inplace:
-            augmented_file = datasets_mapping[self.args.task].train_file
+            augmented_file = datasets_description_mapping[self.args.task].train_file
         else:
-            augmented_file = datasets_mapping[self.args.task].train_file.rsplit('.', 1)[0] + '_augmented.json'
+            augmented_file = datasets_description_mapping[self.args.task].train_file.rsplit('.', 1)[0] + '_augmented.json'
         with open(augmented_file, 'w', encoding='utf-8', newline='\n') as f:
             json.dump(self.data_list, f, ensure_ascii=False, indent=4)
         print(f"finish writing in {augmented_file}")
