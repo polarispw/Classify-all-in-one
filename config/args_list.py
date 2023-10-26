@@ -6,7 +6,6 @@ from datetime import datetime
 from transformers import TrainingArguments, SchedulerType, IntervalStrategy, HfArgumentParser
 from transformers.trainer_utils import ShardedDDPOption
 from transformers.training_args import OptimizerNames
-from transformers.utils import ExplicitEnum
 
 
 @dataclass
@@ -17,6 +16,10 @@ class CLSDatasetArguments:
     data_path: str = field(
         default="data_lib/fake_reviews/fake reviews dataset.csv",
         metadata={"help": "Path to the dataset"}
+    )
+    rand_seed: int = field(
+        default=42,
+        metadata={"help": "Random seed for data split."}
     )
 
 
@@ -97,7 +100,8 @@ class CLSTrainingArguments(TrainingArguments):
     )
 
     per_device_train_batch_size: int = field(
-        default=8, metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for training."}
+        default=8,
+        metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for training."}
     )
     evaluation_strategy: str = field(
         default="steps",
@@ -108,7 +112,8 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "Run evaluation every X steps."},
     )
     per_device_eval_batch_size: int = field(
-        default=8, metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for evaluation."}
+        default=8,
+        metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for evaluation."}
     )
 
     gradient_accumulation_steps: int = field(
@@ -199,20 +204,23 @@ class CLSTrainingArguments(TrainingArguments):
     )
     load_best_model_at_end: Optional[bool] = field(
         default=False,
-        metadata={
-            "help": "Whether or not to load the best model found during training at the end of training. When this "
-                    "option is enabled, the best checkpoint will always be saved. See `save_total_limit` for more."},
+        metadata={"help": "Whether or not to load the best model found during training at the end of training. When "
+                          "this option is enabled, the best checkpoint will always be saved. See `save_total_limit` "
+                          "for more."},
     )
 
-    seed: int = field(default=42, metadata={"help": "Random seed that will be set at the beginning of training."})
+    seed: int = field(
+        default=42,
+        metadata={"help": "Random seed that will be set at the beginning of training."})
 
-    local_rank: int = field(default=-1, metadata={"help": "For distributed training: local_rank"})
+    local_rank: int = field(
+        default=-1,
+        metadata={"help": "For distributed training: local_rank"}
+    )
     ddp_backend: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "The backend to be used for distributed training",
-            "choices": ["nccl", "gloo", "mpi", "ccl"],
-        },
+        metadata={"help": "The backend to be used for distributed training",
+                  "choices": ["nccl", "gloo", "mpi", "ccl"]},
     )
     sharded_ddp: Optional[Union[List[ShardedDDPOption], str]] = field(
         default="",
@@ -228,15 +236,12 @@ class CLSTrainingArguments(TrainingArguments):
     # Do not touch this type annotation, or it will stop working in CLI
     deepspeed: Optional[str] = field(
         default=None,
-        metadata={
-            "help": (
-                "Enable deepspeed and pass the path to deepspeed json config file (e.g. `ds_config.json`) or an already"
-                " loaded json file as a dict"
-            )
-        },
+        metadata={"help": "Enable deepspeed and pass the path to deepspeed json config file (e.g. `ds_config.json`) "
+                          "or an already loaded json file as a dict"},
     )
     label_smoothing_factor: float = field(
-        default=0.0, metadata={"help": "The label smoothing epsilon to apply (zero means no label smoothing)."}
+        default=0.0,
+        metadata={"help": "The label smoothing epsilon to apply (zero means no label smoothing)."},
     )
 
     optimizer: Union[OptimizerNames, str] = field(
@@ -245,11 +250,13 @@ class CLSTrainingArguments(TrainingArguments):
     )
 
     dataloader_pin_memory: bool = field(
-        default=True, metadata={"help": "Whether or not to pin memory for DataLoader."}
+        default=True,
+        metadata={"help": "Whether or not to pin memory for DataLoader."}
     )
 
     include_inputs_for_metrics: bool = field(
-        default=False, metadata={"help": "Whether or not the inputs will be passed to the `compute_metrics` function."}
+        default=False,
+        metadata={"help": "Whether or not the inputs will be passed to the `compute_metrics` function."}
     )
 
 

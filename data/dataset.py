@@ -1,8 +1,8 @@
 """
-Here includes Dataset class for different tasks
+Here includes DataManager Class for different tasks
 """
 import os
-from typing import List
+from typing import List, Dict
 
 import datasets
 from datasets import load_dataset, DatasetDict, Dataset
@@ -10,13 +10,14 @@ from datasets import load_dataset, DatasetDict, Dataset
 from config.args_list import CLSDatasetArguments
 
 
-class CLSDataset:
+class CLSDataManager:
     """
     This is a dataset class for base CLS task
     """
 
     def __init__(self, args, tokenizer):
         # check the file
+        self.args = args
         self.data_path = args.data_path
         if not os.path.exists(self.data_path):
             raise FileNotFoundError(f"Data path {self.data_path} does not exist.")
@@ -30,33 +31,50 @@ class CLSDataset:
             raise NotImplementedError(f"File type {self.file_type} is not supported.")
 
         self.tokenizer = tokenizer
-        self.random_seed = 42 # args.seed
+        self.random_seed = args.rand_seed
 
-        self.raw_datasets = None
-        self.tokenized_datasets = None
-        self.balanced_subset = None
-
-    def load_dataset(self) -> DatasetDict:
+    def load_dataset(self):
         if self.file_type == "csv":
-            self.raw_datasets = load_dataset("csv", data_files=self.data_path)
+            raw_datasets = load_dataset("csv", data_files=self.data_path)
         elif self.file_type == "json":
-            self.raw_datasets = load_dataset("json", data_files=self.data_path)
+            raw_datasets = load_dataset("json", data_files=self.data_path)
         elif self.file_type == "txt":
-            self.raw_datasets = load_dataset("text", data_files=self.data_path)
+            raw_datasets = load_dataset("text", data_files=self.data_path)
+        else:
+            raise NotImplementedError(f"File type {self.file_type} is not supported.")
 
-        return self.raw_datasets
+        if len(raw_datasets) == 1:
+            split_key = list(raw_datasets.keys())[0]
+            raw_datasets = raw_datasets[split_key]
 
-    def sample_balanced_subsets(self, num_for_each_class: int = None) -> DatasetDict:
+        return raw_datasets, type(raw_datasets)
+
+    def load_and_split_dataset(self,
+                               raw_dataset: Dataset = None,
+                               train_ratio: float = 0.8) -> DatasetDict:
         """
-        This function is used to sample balanced subsets from the **train** dataset.
+        This function is used to split the dataset into train and test.
+        """
+        if raw_dataset is None:
+            raw_dataset = self.load_dataset()
+
+        if isinstance(raw_dataset, DatasetDict):
+            raise TypeError("DatasetDict is already split, check the key of it")
+
+        raw_dataset = raw_dataset.train_test_split(train_size=train_ratio, seed=self.random_seed)
+        return raw_dataset
+
+    def sample_balanced_subsets(self,
+                                raw_dataset: Dataset,
+                                target_col_name: str = "label",
+                                num_for_each_class: int = None) -> Dataset:
+        """
+        This function is used to sample balanced subsets from dataset.
         """
         # get the num of data in each class
         num_data = {}
-        if self.raw_datasets is None:
-            self.load_dataset()
-
         # if no key named "train", change here to fit your dataset or use dataset.train_test_split() to split it
-        for label in self.raw_datasets["train"]["label"]:
+        for label in raw_dataset[target_col_name]:
             if label not in num_data:
                 num_data[label] = 1
             else:
@@ -67,7 +85,7 @@ class CLSDataset:
                                                                                      min(num_data.values()))
         sampled_data = []
         for label in num_data:
-            sampled_data.append(self.raw_datasets["train"].filter(lambda example: example["label"] == label).shuffle(
+            sampled_data.append(raw_dataset.filter(lambda example: example[target_col_name] == label).shuffle(
                 seed=self.random_seed).select(range(min_num_data)))
 
         # rank the sampled data in turn of label, for SIMCSE pretrain
@@ -76,49 +94,118 @@ class CLSDataset:
             for l in range(len(sampled_data)):
                 ranked_data.append(sampled_data[l][i])
 
-        self.balanced_subset = DatasetDict({"train": datasets.Dataset.from_list(ranked_data)})
-        return self.balanced_subset
+        balanced_subset = datasets.Dataset.from_list(ranked_data)
+        return balanced_subset
 
-    def tokenize_dataset(self, col_names: List) -> DatasetDict:
+    def tokenize_dataset(self,
+                         raw_dataset: Dataset,
+                         col_names: List,
+                         max_seq_length: int = 512) -> Dataset:
         """
         This function is used to tokenize the dataset.
-        Func of tokenizer is also implemented in data_collator, which is recommended.
-        If you tokenize the dataset here, tokenizer in trainer should be None to avoid tokenization again.
-        .
-
-        :param col_names: title of columns to be tokenized
         """
-        if self.raw_datasets is None:
-            self.load_dataset()
-
-        self.tokenized_datasets = self.raw_datasets
+        tokenized_dataset = None
         for col_name in col_names:
-            self.tokenized_datasets = self.tokenized_datasets.map(lambda example: self.tokenizer(example[col_name],
-                                                                                                 truncation=True,
-                                                                                                 padding="max_length",),
-                                                                  batched=True)
-        return self.tokenized_datasets
+            tokenized_dataset = raw_dataset.map(lambda example: self.tokenizer(example[col_name],
+                                                                               truncation=True,
+                                                                               padding="max_length",
+                                                                               max_length=max_seq_length),
+                                                batched=True)
+        return tokenized_dataset
 
-    def merge_columns(self, col_names: List, new_col_name: str) -> DatasetDict:
+    def collate_for_model(self,
+                          raw_dataset: Dataset,
+                          feature2input: Dict,
+                          max_seq_length: int = 512) -> Dataset:
+        """
+        This function is used to prepare the dataset for model inputs
+        feature2input: a dict that maps feature name to model's input parameters' name
+                        {"labels": "your_label", "input_ids": ["sentence1", sentence2, ...], ...}
+        """
+        # map the labels
+        raw_dataset = raw_dataset.rename_column(feature2input["labels"], "labels")
+
+        # merge the features
+        for feature in feature2input:
+            if feature != "labels":
+                raw_dataset = self.merge_columns(self,
+                                                 raw_dataset=raw_dataset,
+                                                 col_names=feature2input[feature],
+                                                 new_col_name="text")
+
+        # tokenize the merged features
+        tokenized_dataset = self.tokenize_dataset(raw_dataset=raw_dataset,
+                                                  col_names=["text"],
+                                                  max_seq_length=max_seq_length)
+
+        return tokenized_dataset
+
+    @staticmethod
+    def merge_columns(self,
+                      raw_dataset: Dataset,
+                      col_names: List,
+                      new_col_name: str,
+                      remain_old_columns: bool = False) -> Dataset:
         """
         This function is used to merge columns into one column.
         """
-        if self.raw_datasets is None:
-            self.load_dataset()
+        merged_dataset = raw_dataset.map(lambda example:
+                                         {new_col_name: " ".join([example[col_name] for col_name in col_names])})
+        if not remain_old_columns:
+            merged_dataset = merged_dataset.remove_columns(col_names)
 
-        self.raw_datasets = self.raw_datasets.map(lambda example: {"text_": " ".join([example[col_name] for col_name in col_names])})
-        return self.raw_datasets
+        return merged_dataset
+
+    @staticmethod
+    def save_to_json(self,
+                     dataset: [DatasetDict, Dataset],
+                     save_path: str,
+                     **to_json_kwargs):
+        """
+        This function is used to save the dataset to json file.
+        """
+        if isinstance(dataset, Dataset):
+            dataset.to_json(save_path, **to_json_kwargs)
+        elif isinstance(dataset, DatasetDict):
+            for split in dataset:
+                file_name = save_path.split(".json")[0] + f"_{split}.json"
+                dataset[split].to_json(file_name, **to_json_kwargs)
+        else:
+            raise TypeError(f"Dataset type {type(dataset)} is not supported.")
 
 
 if __name__ == "__main__":
     from transformers import AutoTokenizer
 
     my_tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    my_dataset = CLSDataset(args=CLSDatasetArguments(data_path="../data_lib/fake_reviews/fake reviews dataset.csv"),
-                            tokenizer=my_tokenizer)
+    args = CLSDatasetArguments(data_path="../data_lib/chatgpt_review/chatgpt_reviews.csv")
+    my_dataset = CLSDataManager(args=args, tokenizer=my_tokenizer)
 
-    balanced_dataset = my_dataset.sample_balanced_subsets(32)["train"]
-    tokenized_dataset = my_dataset.tokenize_dataset(["text_"])["train"]
-    print(my_dataset.raw_datasets)
-    print(balanced_dataset[0:10]["label"])
-    print(tokenized_dataset[0])
+    r_dataset, typ = my_dataset.load_dataset()
+    print(r_dataset, typ, sep="\n")
+
+    s_dataset = my_dataset.load_and_split_dataset(raw_dataset=r_dataset)
+    print(s_dataset)
+
+    # b_dataset = my_dataset.sample_balanced_subsets(raw_dataset=s_dataset["train"],
+    #                                                target_col_name="rating",
+    #                                                num_for_each_class=16)
+    # print(b_dataset, b_dataset.num_rows, sep="\n")
+    #
+    # t_dataset = my_dataset.tokenize_dataset(raw_dataset=s_dataset["train"],
+    #                                         col_names=["title", "review"])
+    # print(t_dataset)
+    #
+    # m_dataset = my_dataset.merge_columns(raw_dataset=s_dataset["train"],
+    #                                      col_names=["title", "review"],
+    #                                      new_col_name="text")
+    # print(m_dataset)
+    #
+    # my_dataset.save_to_json(dataset=s_dataset, save_path="../data_lib/chatgpt_review/chatgpt_reviews.json")
+    # reload = load_dataset("json", data_files="../data_lib/chatgpt_review/chatgpt_reviews_train.json")
+    # print(reload)
+
+    input_dataset = my_dataset.collate_for_model(raw_dataset=s_dataset["train"],
+                                                 feature2input={"input_ids": ["title", "review"],
+                                                                "labels": "rating"})
+    print(input_dataset)

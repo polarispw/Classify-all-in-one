@@ -12,13 +12,13 @@ from peft import (
     PeftModelForSequenceClassification, PromptTuningConfig, PromptEncoderConfig, LoraConfig
 )
 
-from data.dataset import CLSDataset
+from data.dataset import CLSDataManager
 from models.modeling_bert import SIMBert
 from train.bert_trainer import BertTrainer
 
 task_methods_map = {
     "fine-tune": {
-        "dataset": CLSDataset,
+        "dataset": CLSDataManager,
         "metric": None,
         "data_collator": DataCollatorWithPadding,
         "tokenizer": AutoTokenizer,
@@ -27,7 +27,7 @@ task_methods_map = {
     },
 
     "pre-train": {
-        "dataset": CLSDataset,
+        "dataset": CLSDataManager,
         "metric": None,
         "data_collator": DataCollatorWithPadding,
         "tokenizer": AutoTokenizer,
@@ -35,8 +35,9 @@ task_methods_map = {
         "trainer": BertTrainer,
     },
 
+    # not support yet
     "prompt-tuning": {
-        "dataset": CLSDataset,
+        "dataset": CLSDataManager,
         "metric": None,
         "data_collator": DataCollatorWithPadding,
         "tokenizer": AutoTokenizer,
@@ -46,7 +47,7 @@ task_methods_map = {
     },
 
     "p-tuning": {
-        "dataset": CLSDataset,
+        "dataset": CLSDataManager,
         "metric": None,
         "data_collator": DataCollatorWithPadding,
         "tokenizer": AutoTokenizer,
@@ -55,8 +56,9 @@ task_methods_map = {
         "trainer": Trainer,
     },
 
+    # not support yet
     "lora": {
-        "dataset": CLSDataset,
+        "dataset": CLSDataManager,
         "metric": None,
         "data_collator": DataCollatorWithPadding,
         "tokenizer": AutoTokenizer,

@@ -50,7 +50,7 @@ def main():
     )
 
     # Load dataset
-    dataset = task_methods_map[task_type]['dataset'](args=data_args, tokenizer=tokenizer)
+    data_manager = task_methods_map[task_type]['dataset'](args=data_args, tokenizer=tokenizer)
     # split and tokenized automatically
     # preprocess the dataset according to the input
     # tokenized_datasets = dataset.tokenize_dataset(col_names=data_args.col_names)
@@ -64,7 +64,10 @@ def main():
     tokenized_datasets = raw_datasets.map(lambda example:
                                           tokenizer(example["sentence1"], example["sentence2"], truncation=True),
                                           batched=True)
-
+    print(tokenized_datasets,
+          len(tokenized_datasets['train'][0]['input_ids']),
+          len(tokenized_datasets['train'][0]['sentence1']),
+          len(tokenized_datasets['train'][0]['sentence2']),  sep="\n")
     # Load metric
     metric = task_methods_map[task_type]['metric']
 
