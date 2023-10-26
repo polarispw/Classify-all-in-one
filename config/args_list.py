@@ -9,15 +9,6 @@ from transformers.training_args import OptimizerNames
 from transformers.utils import ExplicitEnum
 
 
-class TaskNameList(ExplicitEnum):
-    """
-    List of available tasks.
-    """
-    LLM = "llm"
-    NLP = "nlp"
-    DETECTOR = "detector"
-
-
 @dataclass
 class CLSDatasetArguments:
     """
@@ -71,12 +62,12 @@ class CLSTrainingArguments(TrainingArguments):
     """
 
     framework = "pt"
-    task_name: Union[TaskNameList, str] = field(
+    task_name: Union[str] = field(
         default="llm",
         metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
     task_type: Optional[str] = field(
-        default="pre-train",
+        default="fine-tune",
         metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`"}
     )
 
@@ -86,23 +77,35 @@ class CLSTrainingArguments(TrainingArguments):
         default=os.path.join("archive/", dt_str),
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
-
     overwrite_output_dir: bool = field(
         default=False,
-        metadata={
-            "help": (
-                "Overwrite the content of the output directory. "
-                "Use this to continue training if output_dir points to a checkpoint directory."
-            )
-        },
+        metadata={"help": "Overwrite the content of the output directory. Use this to continue training if output_dir "
+                          "points to a checkpoint directory."},
     )
 
-    do_train: bool = field(default=True, metadata={"help": "Whether to run training."})
-    do_eval: bool = field(default=False, metadata={"help": "Whether to run eval on the dev set."})
-    do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
+    do_train: bool = field(
+        default=True,
+        metadata={"help": "Whether to run training."}
+    )
+    do_eval: bool = field(
+        default=False,
+        metadata={"help": "Whether to run eval on the dev set."}
+    )
+    do_predict: bool = field(
+        default=False,
+        metadata={"help": "Whether to run predictions on the test set."}
+    )
 
     per_device_train_batch_size: int = field(
         default=8, metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for training."}
+    )
+    evaluation_strategy: str = field(
+        default="steps",
+        metadata={"help": "The evaluation strategy to use."},
+    )
+    eval_steps: int = field(
+        default=200,
+        metadata={"help": "Run evaluation every X steps."},
     )
     per_device_eval_batch_size: int = field(
         default=8, metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for evaluation."}
@@ -113,11 +116,18 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
     )
 
-    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
-    lr_layer_decay_rate: float = field(
-        default=0.97, metadata={"help": "The learning rate decay rate for each layer."}
+    learning_rate: float = field(
+        default=5e-5,
+        metadata={"help": "The initial learning rate for AdamW."}
     )
-    num_train_epochs: float = field(default=3.0, metadata={"help": "Total number of training epochs to perform."})
+    lr_layer_decay_rate: float = field(
+        default=0.97,
+        metadata={"help": "The learning rate decay rate for each layer."}
+    )
+    num_train_epochs: float = field(
+        default=1.0,
+        metadata={"help": "Total number of training epochs to perform."}
+    )
     max_steps: int = field(
         default=-1,
         metadata={"help": "If > 0: set total number of training steps to perform. Override num_train_epochs."},
@@ -127,32 +137,36 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The scheduler type to use."},
     )
     warmup_ratio: float = field(
-        default=0.0, metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."}
+        default=0.0,
+        metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."}
     )
-    warmup_steps: int = field(default=0, metadata={"help": "Linear warmup over warmup_steps."})
+    warmup_steps: int = field(
+        default=0,
+        metadata={"help": "Linear warmup over warmup_steps."}
+    )
     freeze_encoder_layers: Optional[int] = field(
         default=-1,
         metadata={"help": "The number of layers to freeze in the base model."
                           "If -1, whole base model will be updated, if 0, the embedding layer will be frozen, etc."
                           "If > 0, the first n layers will be frozen n = min(n, encoder_layers)."}
     )
+
     log_file: Optional[str] = field(
-        default='log.txt',
+        default=os.path.join("archive/", dt_str, 'log.txt'),
         metadata={"help": "The log file to record training process."}
     )
-    logging_dir: Optional[str] = field(default=None, metadata={"help": "Tensorboard log dir."})
+    logging_dir: Optional[str] = field(
+        default=os.path.join("archive/tensorboard_logs/", dt_str),
+        metadata={"help": "Tensorboard log dir."}
+    )
     logging_strategy: Union[IntervalStrategy, str] = field(
         default="steps",
         metadata={"help": "The logging strategy to use."},
     )
     logging_steps: float = field(
-        default=500,
-        metadata={
-            "help": (
-                "Log every X updates steps. Should be an integer or a float in range `[0,1)`."
-                "If smaller than 1, will be interpreted as ratio of total training steps."
-            )
-        },
+        default=100,
+        metadata={"help": "Log every X updates steps. Should be an integer or a float in range `[0,1)` "
+                          "If smaller than 1, will be interpreted as ratio of total training steps."},
     )
     save_strategy: Union[IntervalStrategy, str] = field(
         default="steps",
@@ -160,26 +174,34 @@ class CLSTrainingArguments(TrainingArguments):
     )
     save_steps: float = field(
         default=500,
-        metadata={
-            "help": (
-                "Save checkpoint every X updates steps. Should be an integer or a float in range `[0,1)`."
-                "If smaller than 1, will be interpreted as ratio of total training steps."
-            )
-        },
+        metadata={"help": "Save checkpoint every X updates steps. Should be an integer or a float in range `[0,1)`."
+                          "If smaller than 1, will be interpreted as ratio of total training steps."},
     )
     save_total_limit: Optional[int] = field(
-        default=None,
+        default=1,
         metadata={
-            "help": (
-                "If a value is passed, will limit the total amount of checkpoints. Deletes the older checkpoints in"
-                " `output_dir`. When `load_best_model_at_end` is enabled, the 'best' checkpoint according to"
-                " `metric_for_best_model` will always be retained in addition to the most recent ones. For example,"
-                " for `save_total_limit=5` and `load_best_model_at_end=True`, the four last checkpoints will always be"
-                " retained alongside the best model. When `save_total_limit=1` and `load_best_model_at_end=True`,"
-                " it is possible that two checkpoints are saved: the last one and the best one (if they are different)."
-                " Default is unlimited checkpoints"
-            )
-        },
+            "help": "If a value is passed, will limit the total amount of checkpoints. Deletes the older checkpoints in"
+                    " `output_dir`. When `load_best_model_at_end` is enabled, the 'best' checkpoint according to"
+                    " `metric_for_best_model` will always be retained in addition to the most recent ones. For example,"
+                    "for `save_total_limit=5` and `load_best_model_at_end=True`, the four last checkpoints will "
+                    "always be retained alongside the best model. When `save_total_limit=1` and "
+                    "`load_best_model_at_end=True`,it is possible that two checkpoints are saved: the last one and "
+                    "the best one (if they are different). Default is unlimited checkpoints"},
+    )
+
+    remove_unused_columns: Optional[bool] = field(
+        default=True,
+        metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
+    )
+    label_names: Optional[List[str]] = field(
+        default=None,
+        metadata={"help": "The list of keys in your dictionary of inputs that correspond to the labels."}
+    )
+    load_best_model_at_end: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Whether or not to load the best model found during training at the end of training. When this "
+                    "option is enabled, the best checkpoint will always be saved. See `save_total_limit` for more."},
     )
 
     seed: int = field(default=42, metadata={"help": "Random seed that will be set at the beginning of training."})
@@ -192,23 +214,6 @@ class CLSTrainingArguments(TrainingArguments):
             "choices": ["nccl", "gloo", "mpi", "ccl"],
         },
     )
-
-    remove_unused_columns: Optional[bool] = field(
-        default=True, metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
-    )
-    label_names: Optional[List[str]] = field(
-        default=None, metadata={"help": "The list of keys in your dictionary of inputs that correspond to the labels."}
-    )
-    load_best_model_at_end: Optional[bool] = field(
-        default=False,
-        metadata={
-            "help": (
-                "Whether or not to load the best model found during training at the end of training. When this option"
-                " is enabled, the best checkpoint will always be saved. See `save_total_limit` for more."
-            )
-        },
-    )
-
     sharded_ddp: Optional[Union[List[ShardedDDPOption], str]] = field(
         default="",
         metadata={
@@ -220,7 +225,6 @@ class CLSTrainingArguments(TrainingArguments):
             ),
         },
     )
-
     # Do not touch this type annotation, or it will stop working in CLI
     deepspeed: Optional[str] = field(
         default=None,

@@ -7,61 +7,68 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers import PreTrainedModel, AutoModel, AutoConfig, AutoTokenizer
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-from configs.args_list import CLSModelArguments
+from config.args_list import CLSModelArguments
 
 
-class BertLikeModel4CLSFT(PreTrainedModel):
+class CLSBert(PreTrainedModel):
     """
-    This class is used to build a model that has a BERT-like architecture to fine-tune for sequence classification.
+    The Layer-wise Bert class is a BERT-like model with MLP classifier for sequence classification.
+    Supports layer wise lr and freezing certain layers.
     """
 
     def __init__(self, args: CLSModelArguments):
-        super(BertLikeModel4CLSFT, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
+        super(CLSBert, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
 
         # you can change the attributes init in ModelConfig here before loading the model
         self.name_or_path = args.name_or_path
         self.cache_dir = args.cache_dir
         self.max_position_embeddings = args.max_seq_length
+
         self.num_labels = args.num_labels
         self.problem_type = args.problem_type
 
         self.base = AutoModel.from_pretrained(self.name_or_path, cache_dir=self.cache_dir)
 
-        self.classifier_width = 2 * self.config.hidden_size
+        self.layer1_width = self.config.hidden_size // 2
+        self.layer2_width = self.config.hidden_size // 4
         self.classifier = nn.Sequential(
-            torch.nn.Linear(self.config.hidden_size, self.classifier_width),
-            torch.nn.Dropout(0.2),
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.classifier_width, self.config.hidden_size),
             torch.nn.Dropout(0.1),
+            torch.nn.Linear(self.config.hidden_size, self.layer1_width),
             torch.nn.ReLU(),
-            torch.nn.Linear(self.config.hidden_size, self.num_labels)
+            torch.nn.Linear(self.layer1_width, self.layer2_width),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.layer2_width, self.num_labels)
         )
 
-    def forward(self,
-                input_ids: Optional[torch.Tensor] = None,
-                attention_mask: Optional[torch.Tensor] = None,
-                token_type_ids: Optional[torch.Tensor] = None,
-                position_ids: Optional[torch.Tensor] = None,
-                head_mask: Optional[torch.Tensor] = None,
-                inputs_embeds: Optional[torch.Tensor] = None,
-                labels: Optional[torch.Tensor] = None,
-                output_attentions: Optional[bool] = None,
-                output_hidden_states: Optional[bool] = None,
-                return_dict: Optional[bool] = None, ):
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
 
-        outputs = self.base(input_ids=input_ids,
-                            attention_mask=attention_mask,
-                            token_type_ids=token_type_ids,
-                            position_ids=position_ids,
-                            head_mask=head_mask,
-                            inputs_embeds=inputs_embeds,
-                            output_attentions=output_attentions,
-                            output_hidden_states=output_hidden_states,
-                            return_dict=return_dict)
+        outputs = self.base(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
 
         # here we sum the last hidden state of all tokens together for cls input
         cls_input = outputs.last_hidden_state.sum(dim=1)
+        # cls_input = outputs[1]
         logits = self.classifier(cls_input)
 
         # here we compute the loss
@@ -102,14 +109,14 @@ class BertLikeModel4CLSFT(PreTrainedModel):
         )
 
 
-class BertLikeModel4SSIMPT(PreTrainedModel):
+class SIMBert(PreTrainedModel):
     """
     This class is used to build a model that has a BERT-like architecture to do supervised SimCSE pre-training.
     We use base + MLP to get the sentence embedding, inferring from the SimCSE paper.
     """
 
     def __init__(self, args: CLSModelArguments):
-        super(BertLikeModel4SSIMPT, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
+        super(SIMBert, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
 
         # you can change the attributes init in ModelConfig here before loading the model
         self.name_or_path = args.name_or_path
@@ -196,7 +203,7 @@ class BertLikeModel4SSIMPT(PreTrainedModel):
 
 
 if __name__ == "__main__":
-    my_model = BertLikeModel4SSIMPT(CLSModelArguments('bert-base-uncased', cache_dir='../model_cache')).to('cuda')
+    my_model = SIMBert(CLSModelArguments('bert-base-uncased', cache_dir='../model_cache')).to('cuda')
     my_model.train()
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")

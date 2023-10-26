@@ -8,7 +8,7 @@ from transformers import Trainer
 from transformers.optimization import AdamW
 
 
-class CLSTrainer(Trainer):
+class BertTrainer(Trainer):
     """
     Customize optimizer to enable tricks like layer-wise lr decay, and freezing layers
     """
@@ -96,8 +96,8 @@ if __name__ == "__main__":
     import numpy as np
     import evaluate
 
-    from configs.args_list import CLSTrainingArguments, CLSModelArguments
-    from models.modeling_bert import BertLikeModel4CLSFT, BertLikeModel4SSIMPT
+    from config.args_list import CLSTrainingArguments, CLSModelArguments
+    from models.modeling_bert import CLSBert, SIMBert
 
     raw_datasets = load_dataset("glue", "mrpc")
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
@@ -108,7 +108,7 @@ if __name__ == "__main__":
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     model_args = CLSModelArguments(name_or_path='bert-base-uncased', cache_dir='../model_cache')
-    my_model = BertLikeModel4SSIMPT(model_args)
+    my_model = SIMBert(model_args)
 
 
     def compute_metrics(eval_preds):
@@ -127,7 +127,7 @@ if __name__ == "__main__":
                                          freeze_encoder_layers=10,
                                          )
 
-    trainer = CLSTrainer(
+    trainer = BertTrainer(
         my_model,
         training_args,
         train_dataset=tokenized_datasets["train"],

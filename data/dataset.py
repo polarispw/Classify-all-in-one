@@ -7,7 +7,7 @@ from typing import List
 import datasets
 from datasets import load_dataset, DatasetDict, Dataset
 
-from configs.args_list import CLSDatasetArguments
+from config.args_list import CLSDatasetArguments
 
 
 class CLSDataset:
@@ -15,7 +15,7 @@ class CLSDataset:
     This is a dataset class for base CLS task
     """
 
-    def __init__(self, args: CLSDatasetArguments, tokenizer, seed):
+    def __init__(self, args, tokenizer):
         # check the file
         self.data_path = args.data_path
         if not os.path.exists(self.data_path):
@@ -30,7 +30,7 @@ class CLSDataset:
             raise NotImplementedError(f"File type {self.file_type} is not supported.")
 
         self.tokenizer = tokenizer
-        self.random_seed = seed
+        self.random_seed = 42 # args.seed
 
         self.raw_datasets = None
         self.tokenized_datasets = None
