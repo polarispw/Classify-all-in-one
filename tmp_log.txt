@@ -1,8 +1,0 @@
-10/26/2023 22:01:44 - WARNING - __main__ -   Process rank: 0, device: cuda:0, n_gpu: 1, distributed training: True, 16-bits training: False
-10/26/2023 22:01:47 - WARNING - datasets.builder -   Found cached dataset glue (C:/Users/SPW/.cache/huggingface/datasets/glue/mrpc/1.0.0/dacbe3125aa31d7f70367a07a8a9e72a5a0bfeb5fc42e75c9db75b96da6053ad)
-10/26/2023 22:01:47 - WARNING - datasets.arrow_dataset -   Loading cached processed dataset at C:\Users\SPW\.cache\huggingface\datasets\glue\mrpc\1.0.0\dacbe3125aa31d7f70367a07a8a9e72a5a0bfeb5fc42e75c9db75b96da6053ad\cache-117cca237daf4034.arrow
-10/26/2023 22:01:47 - WARNING - datasets.arrow_dataset -   Loading cached processed dataset at C:\Users\SPW\.cache\huggingface\datasets\glue\mrpc\1.0.0\dacbe3125aa31d7f70367a07a8a9e72a5a0bfeb5fc42e75c9db75b96da6053ad\cache-0d5be01e12f0f59d.arrow
-10/26/2023 22:01:47 - WARNING - datasets.arrow_dataset -   Loading cached processed dataset at C:\Users\SPW\.cache\huggingface\datasets\glue\mrpc\1.0.0\dacbe3125aa31d7f70367a07a8a9e72a5a0bfeb5fc42e75c9db75b96da6053ad\cache-679de56bc5f7ebed.arrow
-10/26/2023 23:45:01 - WARNING - __main__ -   Process rank: 0, device: cuda:0, n_gpu: 1, distributed training: True, 16-bits training: False
-10/26/2023 23:49:39 - WARNING - __main__ -   Process rank: 0, device: cuda:0, n_gpu: 1, distributed training: True, 16-bits training: False
-10/26/2023 23:52:31 - WARNING - __main__ -   Process rank: 0, device: cuda:0, n_gpu: 1, distributed training: True, 16-bits training: False

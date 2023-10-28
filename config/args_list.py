@@ -14,12 +14,20 @@ class CLSDatasetArguments:
     Arguments about the task dataset.
     """
     data_path: str = field(
-        default="data_lib/fake_reviews/fake reviews dataset.csv",
+        default="data_lib/chatgpt_review/chatgpt_reviews.csv",
         metadata={"help": "Path to the dataset"}
     )
     rand_seed: int = field(
         default=42,
         metadata={"help": "Random seed for data split."}
+    )
+    label2id: str = field(
+        default="{'1': 0, '2': 1, '3': 2, '4': 3, '5': 4}",
+        metadata={"help": "A mapping from label to id."}
+    )
+    feature2input: str = field(
+        default="{'input_ids': ['title', 'review'], 'label': 'rating'}",
+        metadata={"help": "A mapping from feature name to input name."}
     )
 
 
@@ -28,8 +36,8 @@ class CLSModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
-    name_or_path: str = field(
-        default="bert-base-uncased",
+    model_name_or_path: str = field(
+        default="roberta-large",
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
@@ -45,12 +53,51 @@ class CLSModelArguments:
         metadata={"help": "Type of the problem: `[single, multi]_label_classification`, `regression`"}
     )
     num_labels: Optional[int] = field(
-        default=2,
+        default=5,
         metadata={"help": "Number of labels to use in the last layer of the model."}
     )
     max_seq_length: Optional[int] = field(
-        default=512,
-        metadata={"help": "Max input length"}
+        default=490,
+        metadata={"help": "Max input length, if using virtual tokens, "
+                          "max_seq_length = model.config.max_position_embeddings - num_virtual_tokens"}
+    )
+
+    # For peft
+    peft_model_id: Optional[str] = field(
+        default=None,
+        metadata={"help": "The model id of peft part. If None then will initialize new parameters."}
+    )
+    peft_task_type: Optional[str] = field(
+        default="SEQ_CLS",
+        metadata={"help": "Task type for prompt tuning: `SEQ_CLS`, `SEQ2SEQ`"}
+    )
+    prompt_tuning_init_text: Optional[str] = field(
+        default="Classify if the text is a complaint or not:",
+        metadata={"help": "The text to use for prompt tuning initialization. Only used if prompt_tuning_init is `TEXT`"}
+    )
+    num_virtual_tokens: Optional[int] = field(
+        default=20,
+        metadata={"help": "Number of virtual tokens for prompt tuning."}
+    )
+    encoder_hidden_size: Optional[int] = field(
+        default=128,
+        metadata={"help": "Hidden size of the encoder for prompt tuning."}
+    )
+    ptuning_encoder_type: Optional[str] = field(
+        default="MLP",
+        metadata={"help": "The type of reparameterization to use for prompt tuning."}
+    )
+    lora_rank: Optional[int] = field(
+        default=8,
+        metadata={"help": "The rank of the low-rank approximation."}
+    )
+    lora_alpha: Optional[int] = field(
+        default=32,
+        metadata={"help": "The alpha value for LoRA."}
+    )
+    lora_dropout: Optional[float] = field(
+        default=0.1,
+        metadata={"help": "The dropout rate for LoRA."}
     )
 
 
@@ -65,12 +112,13 @@ class CLSTrainingArguments(TrainingArguments):
     """
 
     framework = "pt"
+    use_cpu = False
     task_name: Union[str] = field(
         default="llm",
         metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
     task_type: Optional[str] = field(
-        default="fine-tune",
+        default="p-tuning",
         metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`"}
     )
 
@@ -91,7 +139,7 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "Whether to run training."}
     )
     do_eval: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Whether to run eval on the dev set."}
     )
     do_predict: bool = field(
@@ -178,7 +226,7 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The checkpoint save strategy to use."},
     )
     save_steps: float = field(
-        default=500,
+        default=200,
         metadata={"help": "Save checkpoint every X updates steps. Should be an integer or a float in range `[0,1)`."
                           "If smaller than 1, will be interpreted as ratio of total training steps."},
     )
@@ -261,7 +309,7 @@ class CLSTrainingArguments(TrainingArguments):
 
 
 if __name__ == "__main__":
-    model_args = CLSModelArguments(name_or_path="bert-base-uncased")
+    model_args = CLSModelArguments(model_name_or_path="bert-base-uncased")
     training_args = CLSTrainingArguments(task_name="llm", output_dir="../archive")
 
     parser = HfArgumentParser((CLSModelArguments, CLSTrainingArguments))

@@ -61,16 +61,19 @@ tokenized_datasets = tokenized_datasets.rename_column("label", "labels")
 data_collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
 
 peft_config = PromptEncoderConfig(task_type="SEQ_CLS", num_virtual_tokens=20, encoder_hidden_size=128)
-model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, return_dict=True, cache_dir="model_cache")
+model = AutoModelForSequenceClassification.from_pretrained(model_name_or_path, return_dict=True,
+                                                           cache_dir="model_cache")
 model = get_peft_model(model, peft_config)
 
 training_args = TrainingArguments(
-    output_dir="your-name/roberta-large-peft-p-tuning",
+    output_dir="archive/roberta-large-peft-p-tuning",
     learning_rate=1e-3,
     per_device_train_batch_size=32,
     per_device_eval_batch_size=32,
     num_train_epochs=2,
     weight_decay=0.01,
+    save_steps=100,
+    save_total_limit=1,
     evaluation_strategy="epoch",
     save_strategy="epoch",
     load_best_model_at_end=True,

@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-    model_args = CLSModelArguments(name_or_path='bert-base-uncased', cache_dir='../model_cache')
+    model_args = CLSModelArguments(model_name_or_path='bert-base-uncased', cache_dir='../model_cache')
     my_model = SIMBert(model_args)
 
 
@@ -140,4 +140,4 @@ if __name__ == "__main__":
     trainer.train()
 
     # visualize the training logs by tensorboard
-    # tensorboard --logdir .\archive\runs --bind_all
+    # tensorboard --logdir .archive/tensorboard_logs

@@ -17,10 +17,10 @@ class CLSBert(PreTrainedModel):
     """
 
     def __init__(self, args: CLSModelArguments):
-        super(CLSBert, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
+        super(CLSBert, self).__init__(AutoConfig.from_pretrained(args.model_name_or_path))
 
         # you can change the attributes init in ModelConfig here before loading the model
-        self.name_or_path = args.name_or_path
+        self.name_or_path = args.model_name_or_path
         self.cache_dir = args.cache_dir
         self.max_position_embeddings = args.max_seq_length
 
@@ -116,10 +116,10 @@ class SIMBert(PreTrainedModel):
     """
 
     def __init__(self, args: CLSModelArguments):
-        super(SIMBert, self).__init__(AutoConfig.from_pretrained(args.name_or_path))
+        super(SIMBert, self).__init__(AutoConfig.from_pretrained(args.model_name_or_path))
 
         # you can change the attributes init in ModelConfig here before loading the model
-        self.name_or_path = args.name_or_path
+        self.name_or_path = args.model_name_or_path
         self.cache_dir = args.cache_dir
         self.max_position_embeddings = args.max_seq_length
         self.num_labels = args.num_labels

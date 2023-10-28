@@ -56,7 +56,7 @@ class CLSDataManager:
         This function is used to split the dataset into train and test.
         """
         if raw_dataset is None:
-            raw_dataset = self.load_dataset()
+            raw_dataset, _ = self.load_dataset()
 
         if isinstance(raw_dataset, DatasetDict):
             raise TypeError("DatasetDict is already split, check the key of it")
@@ -99,46 +99,47 @@ class CLSDataManager:
 
     def tokenize_dataset(self,
                          raw_dataset: Dataset,
-                         col_names: List,
-                         max_seq_length: int = 512) -> Dataset:
+                         col_names: List) -> Dataset:
         """
         This function is used to tokenize the dataset.
         """
         tokenized_dataset = None
         for col_name in col_names:
-            tokenized_dataset = raw_dataset.map(lambda example: self.tokenizer(example[col_name],
-                                                                               truncation=True,
-                                                                               padding="max_length",
-                                                                               max_length=max_seq_length),
+            tokenized_dataset = raw_dataset.map(lambda example: self.tokenizer(example[col_name], truncation=True),
                                                 batched=True)
         return tokenized_dataset
 
     def collate_for_model(self,
-                          raw_dataset: Dataset,
-                          feature2input: Dict,
-                          max_seq_length: int = 512) -> Dataset:
+                          raw_ds: Dataset,
+                          label2id: Dict,
+                          feature2input: Dict) -> Dataset:
         """
         This function is used to prepare the dataset for model inputs
         feature2input: a dict that maps feature name to model's input parameters' name
-                        {"labels": "your_label", "input_ids": ["sentence1", sentence2, ...], ...}
+                        {"label": "your_label", "input_ids": ["sentence1", sentence2, ...], ...}
         """
         # map the labels
-        raw_dataset = raw_dataset.rename_column(feature2input["labels"], "labels")
+        if feature2input["label"] != "label":
+            raw_ds = raw_ds.rename_column(feature2input["label"], "label")
+        raw_ds = raw_ds.class_encode_column("label")
+        aligned_ds = raw_ds.align_labels_with_mapping(label2id=label2id, label_column="label")
 
         # merge the features
         for feature in feature2input:
-            if feature != "labels":
-                raw_dataset = self.merge_columns(self,
-                                                 raw_dataset=raw_dataset,
-                                                 col_names=feature2input[feature],
-                                                 new_col_name="text")
+            if feature != "label":
+                merged_ds = self.merge_columns(self,
+                                               raw_dataset=aligned_ds,
+                                               col_names=feature2input[feature],
+                                               new_col_name="text")
 
         # tokenize the merged features
-        tokenized_dataset = self.tokenize_dataset(raw_dataset=raw_dataset,
-                                                  col_names=["text"],
-                                                  max_seq_length=max_seq_length)
+        tokenized_ds = self.tokenize_dataset(raw_dataset=merged_ds,
+                                             col_names=["text"])
 
-        return tokenized_dataset
+        # add idx column
+        tokenized_ds = tokenized_ds.add_column("idx", range(len(tokenized_ds)))
+
+        return tokenized_ds
 
     @staticmethod
     def merge_columns(self,
@@ -205,7 +206,8 @@ if __name__ == "__main__":
     # reload = load_dataset("json", data_files="../data_lib/chatgpt_review/chatgpt_reviews_train.json")
     # print(reload)
 
-    input_dataset = my_dataset.collate_for_model(raw_dataset=s_dataset["train"],
+    input_dataset = my_dataset.collate_for_model(raw_ds=s_dataset["train"],
+                                                 label2id={"1": 0, "2": 1, "3": 2, "4": 3, "5": 4},
                                                  feature2input={"input_ids": ["title", "review"],
                                                                 "labels": "rating"})
     print(input_dataset)
