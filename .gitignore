@@ -2,10 +2,15 @@
 __pycache__/
 *.py[cod]
 *$py.class
+**/.idea/
+
+archive/
+data_lib/
+model_cache/
 
 # C extensions
 *.so
-
+*.csv
 # Distribution / packaging
 .Python
 build/
@@ -83,7 +88,7 @@ profile_default/
 ipython_config.py
 
 # pyenv
-#   For a library or package, you might want to ignore these files since the code is
+#   For a library or package, you might want to ignore these files since the Code is
 #   intended to run in multiple environments; otherwise, check them in:
 # .python-version
 
