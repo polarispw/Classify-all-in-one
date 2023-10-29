@@ -126,7 +126,6 @@ class SIMBert(PreTrainedModel):
         self.problem_type = args.problem_type
 
         self.base = AutoModel.from_pretrained(self.name_or_path, cache_dir=self.cache_dir)
-        self.mlp = nn.Sequential(nn.Linear(self.config.hidden_size, self.config.hidden_size), nn.Tanh())
 
         self.loss = nn.CrossEntropyLoss()
         self.scale = 20.0
@@ -154,9 +153,8 @@ class SIMBert(PreTrainedModel):
 
         # here we sum the last hidden state of all tokens together as pooled output
         pooled_output = outputs.last_hidden_state.sum(dim=1)
-        pooled_output = self.mlp(pooled_output)
 
-        # labels = torch.tensor([0, 0, 1, 1]).to(pooled_output.device)
+        # labels = torch.tensor([0, 1, 2, 3]).to(pooled_output.device)
         logits, loss = self.simcse_sup_loss(pooled_output, labels)
 
         if not return_dict:
@@ -188,26 +186,28 @@ class SIMBert(PreTrainedModel):
 
         # calculate cosine similarity
         sim = F.cosine_similarity(output_hidden_states.unsqueeze(1), output_hidden_states.unsqueeze(0), dim=-1)
-        sim = sim / self.scale
+        scaled_sim = sim / self.scale
 
-        pos_probs = torch.where(labels.unsqueeze(1) == labels.unsqueeze(0), sim, torch.zeros_like(sim))
-        neg_probs = torch.where(labels.unsqueeze(1) != labels.unsqueeze(0), sim, torch.zeros_like(sim))
-        pos_probs = torch.sub(pos_probs, torch.eye(labels.shape[0], device=sim.device) / self.scale)
+        pos_probs = torch.where(labels.unsqueeze(1) == labels.unsqueeze(0), scaled_sim, torch.zeros_like(scaled_sim))
+        neg_probs = torch.where(labels.unsqueeze(1) != labels.unsqueeze(0), scaled_sim, torch.zeros_like(scaled_sim))
+        pos_probs = torch.sub(pos_probs, torch.eye(labels.shape[0], device=scaled_sim.device) / self.scale)
 
-        neg_probs = torch.add(neg_probs, torch.eye(labels.shape[0], device=sim.device) / self.scale)
+        neg_probs = torch.add(neg_probs, torch.eye(labels.shape[0], device=scaled_sim.device) / self.scale)
         pos_probs = torch.sum(pos_probs, dim=0)
         neg_probs = torch.sum(neg_probs, dim=0)
         pred_probs = torch.stack([pos_probs, neg_probs], dim=0).transpose(0, 1)
         loss = self.loss(pred_probs, torch.zeros_like(labels))
-        return sim, loss
+        return pos_probs - neg_probs, loss
 
 
 if __name__ == "__main__":
-    my_model = SIMBert(CLSModelArguments('bert-base-uncased', cache_dir='../model_cache')).to('cuda')
+    print(torch.cuda.is_available())
+    my_model = SIMBert(CLSModelArguments('bert-base-uncased', cache_dir='../model_cache')).to('cuda:0')
     my_model.train()
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    test_inputs = tokenizer(["Hello, my dog is cute", "Hello, my dog is cute",
+    test_inputs = tokenizer(["Hello, my dog is cute",
+                             "Hello, my dog is cute",
                              "Dimension where cosine similarity is computed",
                              "Dimension where cosine similarity is computed"],
                             padding=True,

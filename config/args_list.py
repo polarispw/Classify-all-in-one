@@ -118,7 +118,7 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
     task_type: Optional[str] = field(
-        default="lora",
+        default="pre-train",
         metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`, 'prompt-tuning', 'prefix-tuning',"
                           " 'p-tuningv2', 'lora'"}
     )
@@ -154,7 +154,7 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The evaluation strategy to use."},
     )
     eval_steps: int = field(
-        default=200,
+        default=20,
         metadata={"help": "Run evaluation every X steps."},
     )
     per_device_eval_batch_size: int = field(
