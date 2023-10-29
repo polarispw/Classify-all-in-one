@@ -2,7 +2,7 @@
 
 ## Features
 
-- support various models: encoders, decoders, seq2seq
+- support various models: encoders(BERT, ALBERT, RoBERTa), decoders(T5), seq2seq(GPT2)
 - support functions like full parameter training, fine-tuning, peft
 - customize the structure of model, invisible to higher levels like data processor or trainer
 - easily run with config.json and CLI
@@ -68,4 +68,3 @@ requirements.txt
       "trainer": [TRAINER],
   }
   ```
-  

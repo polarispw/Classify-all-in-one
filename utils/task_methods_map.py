@@ -16,7 +16,7 @@ from transformers import (
 )
 
 from data.data_manager import CLSDataManager
-from data.metric import compute_acc_f1
+from data.metric import compute_acc_f1, compute_simcse
 from models.modeling_bert import SIMBert
 from train.bert_trainer import BertTrainer
 
@@ -40,7 +40,7 @@ class TaskMethodMap:
 
             "pre-train": {
                 "dataset": CLSDataManager,
-                "metric": compute_acc_f1,
+                "metric": compute_simcse,
                 "data_collator": DataCollatorWithPadding,
                 "tokenizer": AutoTokenizer,
                 "model": SIMBert,

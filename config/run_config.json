@@ -1,11 +1,10 @@
 {
-
     "data_path": "data_lib/chatgpt_review/chatgpt_reviews.csv",
     "rand_seed": 42,
     "label2id": "{'1': 0, '2': 1, '3': 2, '4': 3, '5': 4}",
     "feature2input": "{'input_ids': ['title', 'review'], 'label': 'rating'}",
 
-    "model_name_or_path": "cardiffnlp/twitter-roberta-base-sentiment",
+    "model_name_or_path": "t5-base",
     "config_name": null,
     "cache_dir": "model_cache/",
     "problem_type": null,
@@ -23,7 +22,7 @@
 
     "use_cpu": false,
     "task_name": "chatgpt_review",
-    "task_type": "lora",
+    "task_type": "fine-tune",
     "output_dir": "archive/",
     "overwrite_output_dir": false,
     "do_train": true,
