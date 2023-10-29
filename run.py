@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 
 from filelock import FileLock
-from peft import get_peft_model, PromptTuningInit
+from peft import get_peft_model
 from transformers import HfArgumentParser
 
 from config.args_list import CLSModelArguments, CLSDatasetArguments, CLSTrainingArguments
@@ -24,7 +24,13 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    now = datetime.now()
+    dt_str = now.strftime('%m_%d_%H_%M_%S')
     task_type = training_args.task_type
+    suffix = f"{task_type}_{dt_str}"
+    training_args.output_dir = os.path.join(training_args.output_dir, suffix)
+    training_args.logging_dir = os.path.join(training_args.logging_dir, training_args.output_dir)
 
     # Setup logging
     if os.path.isfile(training_args.log_file):
@@ -111,13 +117,17 @@ def main():
     }
 
     # Save args and logs
+    with open(os.path.join(training_args.output_dir, 'run_config.json'), 'w') as j:
+        # merge args into one dict
+        args_dict = asdict(model_args)
+        args_dict.update(asdict(data_args))
+        args_dict.update(asdict(training_args))
+        json.dump(args_dict, j, indent=4)
+
+    log_file = os.path.join(training_args.output_dir, training_args.log_file)
     if trainer.is_world_process_zero():
         with FileLock('log.lock'):
-            with open(training_args.log_file, 'a') as f:
-                # transfer model_args, data_args, training_args to dict
-                final_result["model_args"] = asdict(model_args)
-                final_result["data_args"] = asdict(data_args)
-                final_result["training_args"] = asdict(training_args)
+            with open(log_file, 'a') as f:
                 final_result = json.dumps(final_result, indent=4)
                 f.write(str(final_result) + '\n')
                 with open("tmp_log.txt", 'r') as tmp:
@@ -133,3 +143,6 @@ if __name__ == "__main__":
     main()
     logging.shutdown()
     os.remove("tmp_log.txt")
+
+    # visualize the training logs by tensorboard
+    # tensorboard --logdir archive/tensorboard_logs

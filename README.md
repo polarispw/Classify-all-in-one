@@ -1,52 +1,71 @@
-# NLP project template
+# Classify all in one
 
-## PLMs for classification tasks
-
-### Features:
+## Features
 
 - support various models: encoders, decoders, seq2seq
-- support functions like full parameter training, fine-tuning, p-tuning
+- support functions like full parameter training, fine-tuning, peft
 - customize the structure of model, invisible to higher levels like data processor or trainer
-- support various metrics
-- customize lr scheduler, optimizer,
-- convenient dataset for text in json files, support multi-labels and multi-text content
 - easily run with config.json and CLI
-- auto archive of logs, results and checkpoints, support tensorboard
-- support multi-GPU and low memory for LLMs PEFT
-- utils for data pre-process, visualization and a chatgpt api
+
+## Project structure
 
 ```python
 Project/
-|---archive/	# dir of logs, checkpoints and results
 |---configs/
-	|---config.json	# default hyper-parameters
-    |---args_list.py	# arg_parser class
+	|---run_config.json	# hyper-parameters to run.py
+    |---args_list.py	# args dataclass
 |---data/
-	|---preprocess.py	# any2json, profile the datasets: seq_len, labels 
     |---augmentation.py	# data augmentaion
-	|---dataset.py
-|---data_lib/	# dir of datasets
+    |---file_utils.py	# utils for augmentation.py
+	|---data_manager.py	# dataset class
+    |---data_collator.py
+    |---metric.py
+|---data_lib/	# dir of datasets, manually created
 |---models/
-	|---base_model.py	# abstract for calling 
-    |---modeling_[model_name].py	# implement and customization of models
+	|---modeling_bert.py
     |---...
-|---solver/
-    |---evaluator.py	# calculate loss
-    |---lr_scheduler.py	# schedule learning rate
-    |---optimizer.py	# library of optimizers
 |---train/
-	|---trainer.py	# basic trainer
-	|---parallel_trainer.py	# train on multi-GPU
+	|---trainer.py
+	|---bert_trainer.py
 	|---...
-|---test/
-	|---test_[dataset_name].py	# various by datasets
 |---utils/
 	|---chatgpt_api.py	# access to chatgpt
-    |---save.py	# create dir for every exp; save logs in CLI, checkpoints and tensorboard files
-    |---...
-|---scripts/
-	|---train.sh	# receive hyper-parameters and call run.py for training
-	|---test.sh	# receive hyper-parameters and call run.py for test
+    |---task_methods_map.py
 run.py
 requirements.txt
 ```
+
+## Usage
+
+> the project based on 🤗[huggingface's](https://huggingface.co/docs) repo: `transformers`, `datasets`, `peft`, `evaluate`
+
+### Quick start
+
+1. prepare your env by `requirements.txt`
+2. copy your dataset to `data_lib`, and implement your data manager. You can refer to the glue_mrpc dataset in `test.py` for your first try since it is well prepared by huggingface.
+3. check the args in `config/run_config.json`, and change them to fit your task
+4. use following command to start training:
+
+   ```shell
+   python run.py .\config\run_config.json
+   ```
+
+   records will be saved in `./archive`
+
+### Customize
+
+- We use a `TaskMethodMap` Class to manage methods to be called when training models.
+- To add your own models, just check the `task_methods_dic` and add your own methods. They can be either API from huggingface or coded by yourself.
+
+  ```python
+  "[METHOD_NAME]": {
+      "dataset": [DATA_MANAGER],
+      "metric": [METRIC_FUNC],
+      "data_collator": [DATA_COLLATOR],
+      "tokenizer": [TOKENIZER],
+      "model": [MODEL],
+      "peft_config": [PEFT_CONFIG],
+      "trainer": [TRAINER],
+  }
+  ```
+  
