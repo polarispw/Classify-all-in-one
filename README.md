@@ -12,24 +12,24 @@
 ```python
 Project/
 |---configs/
-	|---run_config.json	# hyper-parameters to run.py
+    |---run_config.json	# hyper-parameters to run.py
     |---args_list.py	# args dataclass
 |---data/
     |---augmentation.py	# data augmentaion
     |---file_utils.py	# utils for augmentation.py
-	|---data_manager.py	# dataset class
+    |---data_manager.py	# dataset class
     |---data_collator.py
     |---metric.py
 |---data_lib/	# dir of datasets, manually created
 |---models/
-	|---modeling_bert.py
+    |---modeling_bert.py
     |---...
 |---train/
-	|---trainer.py
-	|---bert_trainer.py
-	|---...
+    |---trainer.py
+    |---bert_trainer.py
+    |---...
 |---utils/
-	|---chatgpt_api.py	# access to chatgpt
+    |---chatgpt_api.py	# access to chatgpt
     |---task_methods_map.py
 run.py
 requirements.txt
