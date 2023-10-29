@@ -7,7 +7,6 @@ Support: data_collator for CLS finetune
 from dataclasses import dataclass
 from typing import Union, Optional, List, Any, Dict
 
-import transformers
 from transformers import PreTrainedTokenizerBase
 from transformers.utils import PaddingStrategy
 

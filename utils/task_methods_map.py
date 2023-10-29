@@ -2,20 +2,18 @@
 This file contains a dict that maps task name to their corresponding methods
 To customize a new task, add a new item to this dict and implement the methods
 """
-from dataclasses import dataclass
 
+from peft import (
+    PromptTuningConfig,
+    PromptEncoderConfig,
+    PrefixTuningConfig,
+    LoraConfig, PromptTuningInit, PeftConfig,
+)
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DataCollatorWithPadding,
     Trainer,
-)
-from peft import (
-    PeftModelForSequenceClassification,
-    PromptTuningConfig,
-    PromptEncoderConfig,
-    PrefixTuningConfig,
-    LoraConfig, PromptTuningInit, PeftConfig,
 )
 
 from data.data_manager import CLSDataManager
@@ -131,6 +129,7 @@ class TaskMethodMap:
                 self.model_args.model_name_or_path,
                 num_labels=self.model_args.num_labels,
                 cache_dir=self.model_args.cache_dir,
+                ignore_mismatched_sizes=True
             )
         else:
             return self.task_methods_dic[self.task_type]['model'].from_pretrained(
@@ -138,10 +137,12 @@ class TaskMethodMap:
                 num_labels=self.model_args.num_labels,
                 cache_dir=self.model_args.cache_dir,
                 return_dict=True,
+                ignore_mismatched_sizes=True
             )
 
     def get_peft_config(self):
         if self.model_args.peft_model_id is not None:
+            print(f"Loading peft config from {self.model_args.peft_model_id}")
             return PeftConfig.from_pretrained(self.model_args.peft_model_id)
 
         if self.task_type == 'prompt-tuning':
@@ -176,7 +177,7 @@ class TaskMethodMap:
                 task_type=self.model_args.peft_task_type,
                 inference_mode=self.training_args.do_train,
                 r=self.model_args.lora_rank,
-                loara_alpha=self.model_args.loara_alpha,
+                lora_alpha=self.model_args.lora_alpha,
                 lora_dropout=self.model_args.lora_dropout,
             )
         else:

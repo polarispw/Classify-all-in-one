@@ -4,9 +4,9 @@ When doing training, just use datasets.py
 """
 import json
 import os.path
+from dataclasses import dataclass
 
 import pandas as pd
-from dataclasses import dataclass
 
 
 @dataclass

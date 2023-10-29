@@ -1,7 +1,6 @@
 import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Union
-from datetime import datetime
 
 from transformers import TrainingArguments, SchedulerType, IntervalStrategy, HfArgumentParser
 from transformers.trainer_utils import ShardedDDPOption
@@ -37,7 +36,7 @@ class CLSModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
     model_name_or_path: str = field(
-        default="roberta-large",
+        default="cardiffnlp/twitter-roberta-base-sentiment",
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
@@ -118,14 +117,12 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
     )
     task_type: Optional[str] = field(
-        default="p-tuning",
-        metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`"}
+        default="lora",
+        metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`, 'prompt-tuning', 'prefix-tuning',"
+                          " 'p-tuningv2', 'lora'"}
     )
-
-    now = datetime.now()
-    dt_str = now.strftime('%m_%d_%H_%M_%S')
     output_dir: str = field(
-        default=os.path.join("archive/", dt_str),
+        default=os.path.join("archive/"),
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
     overwrite_output_dir: bool = field(
@@ -205,11 +202,11 @@ class CLSTrainingArguments(TrainingArguments):
     )
 
     log_file: Optional[str] = field(
-        default=os.path.join("archive/", dt_str, 'log.txt'),
+        default="log.txt",
         metadata={"help": "The log file to record training process."}
     )
     logging_dir: Optional[str] = field(
-        default=os.path.join("archive/tensorboard_logs/", dt_str),
+        default=os.path.join("archive/tensorboard_logs/"),
         metadata={"help": "Tensorboard log dir."}
     )
     logging_strategy: Union[IntervalStrategy, str] = field(
@@ -245,10 +242,6 @@ class CLSTrainingArguments(TrainingArguments):
     remove_unused_columns: Optional[bool] = field(
         default=True,
         metadata={"help": "Remove columns not required by the model when using an nlp.Dataset."}
-    )
-    label_names: Optional[List[str]] = field(
-        default=None,
-        metadata={"help": "The list of keys in your dictionary of inputs that correspond to the labels."}
     )
     load_best_model_at_end: Optional[bool] = field(
         default=False,

@@ -97,7 +97,7 @@ if __name__ == "__main__":
     import evaluate
 
     from config.args_list import CLSTrainingArguments, CLSModelArguments
-    from models.modeling_bert import CLSBert, SIMBert
+    from models.modeling_bert import SIMBert
 
     raw_datasets = load_dataset("glue", "mrpc")
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")

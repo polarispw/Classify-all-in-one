@@ -1,8 +1,8 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, List
-
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers import PreTrainedModel, AutoModel, AutoConfig, AutoTokenizer
 from transformers.modeling_outputs import SequenceClassifierOutput
