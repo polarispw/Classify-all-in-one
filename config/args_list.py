@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional, List, Union
 
+
 from transformers import TrainingArguments, SchedulerType, IntervalStrategy, HfArgumentParser
 from transformers.trainer_utils import ShardedDDPOption
 from transformers.training_args import OptimizerNames
@@ -202,6 +203,7 @@ class CLSTrainingArguments(TrainingArguments):
     )
 
     log_file: Optional[str] = field(
+
         default="log.txt",
         metadata={"help": "The log file to record training process."}
     )

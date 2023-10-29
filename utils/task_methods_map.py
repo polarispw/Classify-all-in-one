@@ -2,7 +2,6 @@
 This file contains a dict that maps task name to their corresponding methods
 To customize a new task, add a new item to this dict and implement the methods
 """
-
 from peft import (
     PromptTuningConfig,
     PromptEncoderConfig,
@@ -178,6 +177,7 @@ class TaskMethodMap:
                 inference_mode=self.training_args.do_train,
                 r=self.model_args.lora_rank,
                 lora_alpha=self.model_args.lora_alpha,
+
                 lora_dropout=self.model_args.lora_dropout,
             )
         else:
