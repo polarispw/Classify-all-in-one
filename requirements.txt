@@ -9,3 +9,5 @@ peft==0.5.0
 torch==2.1.0
 tqdm==4.66.1
 transformers==4.34.1
+
+openprompt~=1.0.1

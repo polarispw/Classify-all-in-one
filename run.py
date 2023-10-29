@@ -83,6 +83,9 @@ def main():
         peft_config = task_methods_map.get_peft_config()
         model = get_peft_model(model, peft_config)
 
+    if any(k in model_args.model_name_or_path for k in ("gpt", "opt", "bloom")):
+        model.config.pad_token_id = model.config.eos_token_id
+
     # Initialize Trainer
     trainer = task_methods_map.task_methods_dic[task_type]['trainer'](
         model=model,

@@ -37,7 +37,7 @@ class CLSModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
     model_name_or_path: str = field(
-        default="cardiffnlp/twitter-roberta-base-sentiment",
+        default="gpt2",
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
@@ -113,12 +113,12 @@ class CLSTrainingArguments(TrainingArguments):
 
     framework = "pt"
     use_cpu = False
-    task_name: Union[str] = field(
-        default="llm",
-        metadata={"help": "The name of the task to train on: one of `glue`, `ner`, `pos`, `text-classification`"}
+    lm_type: Union[str] = field(
+        default="causual_lm",
+        metadata={"help": "Type of the language model: `causal_lm`, `encoder`, `seq2seq`"}
     )
     task_type: Optional[str] = field(
-        default="pre-train",
+        default="fine-tune",
         metadata={"help": "Type of the task: `fine-tune`, `pre-train`, `p-tuning`, 'prompt-tuning', 'prefix-tuning',"
                           " 'p-tuningv2', 'lora'"}
     )
@@ -146,7 +146,7 @@ class CLSTrainingArguments(TrainingArguments):
     )
 
     per_device_train_batch_size: int = field(
-        default=8,
+        default=4,
         metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for training."}
     )
     evaluation_strategy: str = field(
@@ -154,11 +154,11 @@ class CLSTrainingArguments(TrainingArguments):
         metadata={"help": "The evaluation strategy to use."},
     )
     eval_steps: int = field(
-        default=20,
+        default=200,
         metadata={"help": "Run evaluation every X steps."},
     )
     per_device_eval_batch_size: int = field(
-        default=8,
+        default=4,
         metadata={"help": "Batch size per GPU/TPU/MPS/NPU core/CPU for evaluation."}
     )
 
